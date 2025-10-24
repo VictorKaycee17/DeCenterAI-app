@@ -17,7 +17,7 @@ interface IUserProfile {
 }
 
 // Get or create a user from Supabase users table by email address
-export const getUserByWallet = async (email: string, userWallet: string) => {
+export const getOrCreateUser = async (email: string, userWallet: string) => {
   try {
     // If the user email is present in the supabase database,
     // then return the user, else create a new user and return the user
@@ -38,6 +38,7 @@ export const getUserByWallet = async (email: string, userWallet: string) => {
       return {
         success: true,
         data: data[0],
+        isNewUser: false,
       };
     }
 
@@ -58,9 +59,62 @@ export const getUserByWallet = async (email: string, userWallet: string) => {
     return {
       success: true,
       data: newUser[0],
+      isNewUser: true,
     };
   } catch (error) {
     console.error("Error getting / creating user from Supabase.", error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Something went wrong.",
+    };
+  }
+};
+
+export const getUserByWallet = async (userWallet: string) => {
+  try {
+    console.log("Get user from supabase by wallet:", userWallet);
+
+    if (!userWallet) throw new Error("No user wallet provided");
+
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("wallet", userWallet);
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      data: data[0],
+    };
+  } catch (error) {
+    console.error("Error getting user from Supabase by wallet address", error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Something went wrong.",
+    };
+  }
+};
+
+export const getUserByEmail = async (email: string) => {
+  try {
+    console.log("Get user from supabase by email:", email);
+
+    if (!email) throw new Error("No user email provided");
+
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("email", email);
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      data: data[0],
+    };
+  } catch (error) {
+    console.error("Error getting user from Supabase by email", error);
     return {
       success: false,
       message: error instanceof Error ? error.message : "Something went wrong.",

@@ -1,7 +1,8 @@
 "use client";
 
-import { getUserByWallet } from "@/actions/supabase/users";
+import { getOrCreateUser } from "@/actions/supabase/users";
 import { ThirdwebConnectButton } from "@/components/auth/ThirdwebConnectButton";
+import { useUser } from "@/hooks/useUser";
 import { client } from "@/lib/thirdweb";
 import { fetchUserFromThirdWeb } from "@/services/thirdweb.service";
 import { useRouter } from "next/navigation";
@@ -12,25 +13,32 @@ export default function SignInPage() {
   const account = useActiveAccount();
 
   const router = useRouter();
+  const { setUser } = useUser();
 
   // Once wallet connected, get user data
   const signInUser = async () => {
-    console.debug("Account", account);
-
     const address = account?.address;
     const user = await fetchUserFromThirdWeb(client, address || "");
     const email = user?.email;
 
     if (!email || !address) return;
 
-    console.debug("Thirdweb auth successful", address, email);
+    console.log("Thirdweb auth successful");
 
     // Fetch or create user in Supabase
-    const userRes = await getUserByWallet(email, address);
+    const userRes = await getOrCreateUser(email, address);
 
-    console.debug("User response from Supabase", userRes);
+    // Store in Zustand
+    setUser(email, address);
 
-    // router.push("/dashboard");
+    await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: address, email }),
+    });
+
+    // Redirect
+    router.push("/dashboard");
   };
 
   useEffect(() => {

@@ -26,14 +26,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ThirdwebProvider>
-      <html lang="en">
-        <head>
-          <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-        </head>
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        >
+    <html lang="en">
+      <head>
+        <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+      </head>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <ThirdwebProvider>
           {children}
           <Analytics />
           <ToastContainer
@@ -48,8 +48,8 @@ export default function RootLayout({
             draggable
             pauseOnHover
           />
-        </body>
-      </html>
-    </ThirdwebProvider>
+        </ThirdwebProvider>
+      </body>
+    </html>
   );
 }
