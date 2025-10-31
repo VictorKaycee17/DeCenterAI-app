@@ -1,8 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { useUser } from "@/hooks/useUser";
 import { useSyncUserFromThirdweb } from "@/hooks/useSyncUserFromThirdweb";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
@@ -12,19 +9,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const { isAuthenticated } = useUser();
   const { isSyncing } = useSyncUserFromThirdweb(); // sync Zustand on load
-
-  useEffect(() => {
-    console.debug(
-      `Syncing user with Thirdweb: ${isSyncing}, User is authenticated: ${isAuthenticated}`
-    );
-
-    if (!isSyncing && !isAuthenticated) {
-      router.push("/signin");
-    }
-  }, [isSyncing, isAuthenticated]);
 
   if (isSyncing) {
     // While syncing user and wallet state, show loading indicator

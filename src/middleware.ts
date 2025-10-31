@@ -10,10 +10,12 @@ export function middleware(req: NextRequest) {
   // Later: replace with cookie/session check if needed
   const user = req.cookies.get("tw_wallet")?.value;
 
+  // Unauthenticated user
   if (!user && (isProtected || isHome)) {
     return NextResponse.redirect(new URL("/signin", req.url));
   }
 
+  // Authenticated user
   if (user && (isAuthPage || isHome)) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
