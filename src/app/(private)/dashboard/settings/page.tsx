@@ -7,8 +7,10 @@ import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useActiveAccount } from "thirdweb/react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useUser } from "@/hooks/useUser";
 
 export default function SettingsPage() {
+  const { updateProfile } = useUser();
   const router = useRouter();
   const searchParams = useSearchParams();
   const modalParam = searchParams.get("modal");
@@ -78,6 +80,13 @@ export default function SettingsPage() {
       const result = await updateUserProfile(userAccount.address, cleanedData);
       if (result.success) {
         toast.success("Profile updated successfully");
+        updateProfile({
+          username: cleanedData.username || undefined,
+          profile_image:
+            cleanedData.profile_image instanceof File
+              ? imageFileToObjectUrl(cleanedData.profile_image)
+              : cleanedData.profile_image || undefined,
+        });
         setShowEditProfile(false);
         router.replace("/dashboard/settings"); // clean up ?modal param
         await fetchUserProfile();

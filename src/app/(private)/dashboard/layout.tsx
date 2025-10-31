@@ -17,6 +17,8 @@ export default function DashboardLayout({
   const { isSyncing } = useSyncUserFromThirdweb(); // sync Zustand on load
 
   useEffect(() => {
+    console.debug(isSyncing, isAuthenticated);
+
     if (!isSyncing && !isAuthenticated) {
       router.push("/signin");
     }

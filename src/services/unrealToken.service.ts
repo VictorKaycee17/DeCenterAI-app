@@ -1,0 +1,51 @@
+"use server";
+
+import { getContract, prepareContractCall, sendTransaction } from "thirdweb";
+import { privateKeyToAccount } from "thirdweb/wallets";
+import { client } from "@/lib/thirdweb";
+import { titanAITestnet, titanAITestnetConfig } from "@/utils/chains";
+
+// Load private key of your treasury wallet
+const treasuryPrivateKey = process.env.TREASURY_PRIVATE_KEY!;
+const account = privateKeyToAccount({
+  client,
+  privateKey: treasuryPrivateKey,
+});
+
+export async function sendWelcomeTokens(toWallet: string, amount: number) {
+  try {
+    // Get the Unreal token contract (ERC20)
+    const contract = getContract({
+      client,
+      chain: titanAITestnet,
+      address: titanAITestnetConfig.custom.tokens.UnrealToken.address,
+    });
+
+    // ERC20 usually has 18 decimals → convert to base units
+    const decimals = titanAITestnetConfig.custom.tokens.UnrealToken.decimals;
+    const value = BigInt(amount) * BigInt(10 ** decimals);
+
+    // Prepare transfer
+    const tx = prepareContractCall({
+      contract,
+      method: "function transfer(address to, uint256 value)",
+      params: [toWallet, value],
+    });
+
+    console.debug(
+      `Prepare sending welcome token value:${value} to ${toWallet}`
+    );
+
+    // Execute transaction
+    const receipt = await sendTransaction({
+      account,
+      transaction: tx,
+    });
+
+    console.log(`✅ Sent ${amount} Unreal tokens to ${toWallet}`);
+    return { success: true, txHash: receipt.transactionHash };
+  } catch (error) {
+    console.error("❌ Failed to send welcome tokens:", error);
+    return { success: false, message: String(error) };
+  }
+}

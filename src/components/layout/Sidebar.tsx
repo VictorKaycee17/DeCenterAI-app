@@ -48,6 +48,19 @@ export default function Sidebar() {
             />
           ))}
         </nav>
+
+        {/* ===== Footer Section ===== */}
+        <div className="flex flex-col items-center justify-center gap-2 px-4 py-6 border-t border-[#191919] text-xs text-[#5D5D5D]">
+          <a
+            href="https://docs.unreal.art"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#8F8F8F] hover:text-[#C1C1C1] transition-colors"
+          >
+            API Documentation
+          </a>
+          <p className="text-[11px] text-[#5D5D5D]">© 2025 DeCenter AI</p>
+        </div>
       </aside>
 
       {/* Mobile Sidebar */}

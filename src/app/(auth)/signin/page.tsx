@@ -5,8 +5,11 @@ import { ThirdwebConnectButton } from "@/components/auth/ThirdwebConnectButton";
 import { useUser } from "@/hooks/useUser";
 import { client } from "@/lib/thirdweb";
 import { fetchUserFromThirdWeb } from "@/services/thirdweb.service";
+import { sendWelcomeTokens } from "@/services/unrealToken.service";
+import { UNREAL_REG_PAYLOAD_CONFIG } from "@/utils/config";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { toast } from "react-toastify";
 import { useActiveAccount } from "thirdweb/react";
 
 export default function SignInPage() {
@@ -18,27 +21,58 @@ export default function SignInPage() {
   // Once wallet connected, get user data
   const signInUser = async () => {
     const address = account?.address;
-    const user = await fetchUserFromThirdWeb(client, address || "");
-    const email = user?.email;
+    if (!address) {
+      console.error("No address / account found");
+      return;
+    }
 
-    if (!email || !address) return;
+    try {
+      // Fetch user identity from Thirdweb
+      const user = await fetchUserFromThirdWeb(client, address || "");
+      const email = user?.email;
 
-    console.log("Thirdweb auth successful");
+      if (!email) {
+        console.error("Unable to retrieve email");
+        return;
+      }
 
-    // Fetch or create user in Supabase
-    const userRes = await getOrCreateUser(email, address);
+      console.log("Thirdweb auth successful");
 
-    // Store in Zustand
-    setUser(email, address);
+      // Fetch or create user in Supabase
+      const userRes = await getOrCreateUser(email, address);
 
-    await fetch("/api/auth/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet: address, email }),
-    });
+      // Send welcome Unreal Token to new user
+      console.debug("Auth User", userRes);
+      if (userRes.isNewUser) {
+        const welcomeTokensRes = await sendWelcomeTokens(
+          address,
+          UNREAL_REG_PAYLOAD_CONFIG.CALLS_INITIAL
+        );
 
-    // Redirect
-    router.push("/dashboard");
+        if (!welcomeTokensRes.success) {
+          toast.warning("Welcome credits airdrop failed.");
+        }
+
+        console.debug("Sending Welcome Token Results", welcomeTokensRes);
+      }
+
+      // Store in Zustand
+      console.debug("userRes", userRes);
+      setUser(userRes.data.id, email, address);
+
+      await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: address, email }),
+      });
+
+      // Redirect
+      toast.success("Signed in successfully!");
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Unexpected error during sign-in:", error);
+      toast.error("Something went wrong during sign-in");
+    }
   };
 
   useEffect(() => {

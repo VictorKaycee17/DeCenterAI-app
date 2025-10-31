@@ -35,6 +35,7 @@ export function useSyncUserFromThirdweb() {
       // If user found, set in Zustand
       if (user.wallet) {
         setUser(
+          user.id,
           email,
           user.wallet,
           user.username || null,
@@ -42,7 +43,7 @@ export function useSyncUserFromThirdweb() {
         );
       } else {
         // fallback: use wallet from connected account
-        setUser(email, wallet);
+        setUser(0, email, wallet);
       }
     } catch (error) {
       console.error("Error syncing user:", error);
