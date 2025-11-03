@@ -129,3 +129,30 @@ export function getChainById(chainId: number) {
 export function getChainConfigById(chainId: number) {
   return chainConfigsById[chainId] ?? null;
 }
+
+// Control which chain the app uses globally via .env
+const ACTIVE_CHAIN_KEY =
+  (process.env.NEXT_PUBLIC_ACTIVE_CHAIN as
+    | "torusMainnet"
+    | "titanAI"
+    | "amoy"
+    | undefined) ?? "titanAI";
+
+export const chainMap = {
+  torusMainnet: {
+    chain: torusMainnet,
+    config: torusMainnetConfig,
+  },
+  titanAI: {
+    chain: titanAITestnet,
+    config: titanAITestnetConfig,
+  },
+  amoy: {
+    chain: amoyTestnet,
+    config: amoyTestnetConfig,
+  },
+} as const;
+
+// The currently active chain (based on env)
+export const activeChain = chainMap[ACTIVE_CHAIN_KEY].chain;
+export const activeChainConfig = chainMap[ACTIVE_CHAIN_KEY].config;
