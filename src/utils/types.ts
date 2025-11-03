@@ -87,6 +87,7 @@ export interface ApiKeyType {
   api_name: string | null;
   payment_token: string | null;
   calls: number | null;
+  initial_calls: number | null;
   chain_id: number | null;
   last_used: string | null;
 }

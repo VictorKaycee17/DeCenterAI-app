@@ -73,6 +73,7 @@ export const createUnrealApiKey = async (
           api_name: data.state.name,
           payment_token: data.state.paymentToken,
           calls: data.state.calls,
+          initial_calls: data.state.calls,
         },
       ])
       .select("*");

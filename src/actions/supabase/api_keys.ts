@@ -106,3 +106,51 @@ export const getApiKeysByUser = async (userId: number) => {
     };
   }
 };
+
+// Get summary of all user's API keys, including total count and total inferences used.
+export const getUserApiKeysSummary = async (userId: number) => {
+  try {
+    if (!userId) throw new Error("User ID is required");
+
+    // Fetch minimal columns for performance
+    const { data, error } = await supabase
+      .from("api_keys")
+      .select("calls, initial_calls")
+      .eq("user", userId)
+      .eq("provider", "unreal");
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      return { success: true, data: { totalKeys: 0, totalInferences: 0 } };
+    }
+
+    // Compute total inferences used
+    const totalInferences = data.reduce((sum, key) => {
+      const initial = key.initial_calls ?? 0;
+      const remaining = key.calls ?? 0;
+      const used = Math.max(initial - remaining, 0);
+      return sum + used;
+    }, 0);
+
+    return {
+      success: true,
+      data: {
+        totalKeys: data.length,
+        totalInferences,
+      },
+    };
+  } catch (error) {
+    console.error(
+      "Error fetching user API key summary:",
+      error instanceof Error ? error.message : error
+    );
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch API key summary",
+    };
+  }
+};
