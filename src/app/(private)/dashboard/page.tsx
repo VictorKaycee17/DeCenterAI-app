@@ -1,6 +1,6 @@
 "use client";
 
-import { getApiKeysByUser } from "@/actions/supabase/api_keys";
+import { getUserApiKeysSummary } from "@/actions/supabase/api_keys";
 import { getNetworkHealth } from "@/actions/unreal/health";
 import HeroSection from "@/components/dashboard/HeroSection";
 import StatCard from "@/components/dashboard/StatCard";
@@ -13,9 +13,10 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 
 export default function DashboardPage() {
-  const { userId, email, wallet } = useUser();
+  const { userId, wallet } = useUser();
   const [unrealBalance, setUnrealBalance] = useState<string | number>(0);
   const [apiKeysCount, setApiKeysCount] = useState<number>(0);
+  const [totalInferences, setTotalInferences] = useState<number>(0);
   const [networkStatus, setNetworkStatus] = useState<string>("loading...");
 
   const chainConfig = getChainConfigById(activeChain.id);
@@ -37,16 +38,20 @@ export default function DashboardPage() {
       toast.error("Failed to fetch Unreal token balance");
     }
   };
-
-  // Fetch API key count
-  const getUserApiKeys = async () => {
+  // Fetch API key summary (count + inferences)
+  const getUserApiKeysSummaryData = async () => {
     if (!userId) return;
     try {
-      const res = await getApiKeysByUser(userId);
-      if (res.success && res.data) setApiKeysCount(res.data.length);
+      const res = await getUserApiKeysSummary(userId);
+      if (res.success && res.data) {
+        setApiKeysCount(res.data.totalKeys);
+        setTotalInferences(res.data.totalInferences);
+      } else {
+        toast.warning(res.message || "Failed to fetch API keys summary");
+      }
     } catch (err) {
-      console.error("Error fetching API keys:", err);
-      toast.error("Failed to fetch API keys");
+      console.error("Error fetching API key summary:", err);
+      toast.error("Failed to fetch API key summary");
     }
   };
 
@@ -65,7 +70,7 @@ export default function DashboardPage() {
   }, [wallet]);
 
   useEffect(() => {
-    getUserApiKeys();
+    getUserApiKeysSummaryData();
   }, [userId]);
 
   useEffect(() => {
@@ -95,7 +100,15 @@ export default function DashboardPage() {
             title="Your API Keys"
             value={apiKeysCount.toString()}
             icon={<Key size={42} className="text-[#5D5D5D]" />}
-            details={[{ label: "", value: "" }]}
+            details={[
+              {
+                label: "Total Inferences",
+                value: totalInferences.toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 2,
+                }),
+              },
+            ]}
           />
 
           <StatCard
