@@ -139,10 +139,44 @@ export const hederaTestnetConfig = {
   },
 };
 
+// Somnia Testnet configuration
+export const somniaTestnetConfig = {
+  id: 50312,
+  name: "Somnia Testnet",
+  nativeCurrency: {
+    decimals: 18,
+    name: "Somnia Test Tokens",
+    symbol: "STT",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://dream-rpc.somnia.network"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "Somnia Explorer",
+      url: "https://shannon-explorer.somnia.network",
+    },
+  },
+  testnet: true,
+  custom: {
+    tokens: {
+      UnrealToken: {
+        address: "0xd1fB2a15545032a8170370d7eC47C0FC69A00eed" as const,
+        symbol: "UNREAL",
+        name: "Unreal Token",
+        decimals: 18,
+      },
+    },
+  },
+};
+
 export const torusMainnet = defineChain(torusMainnetConfig);
 export const titanAITestnet = defineChain(titanAITestnetConfig);
 export const amoyTestnet = defineChain(amoyTestnetConfig);
 export const hederaTestnet = defineChain(hederaTestnetConfig);
+export const somniaTestnet = defineChain(somniaTestnetConfig);
 
 // Map of chain IDs to defined chain objects
 const chainsById = {
@@ -150,6 +184,7 @@ const chainsById = {
   [titanAITestnet.id]: titanAITestnet,
   [amoyTestnet.id]: amoyTestnet,
   [hederaTestnet.id]: hederaTestnet,
+  [somniaTestnet.id]: somniaTestnet,
 } as const;
 
 // Map of chain IDs to configuration objects
@@ -158,6 +193,7 @@ const chainConfigsById = {
   [titanAITestnetConfig.id]: titanAITestnetConfig,
   [amoyTestnetConfig.id]: amoyTestnetConfig,
   [hederaTestnetConfig.id]: hederaTestnetConfig,
+  [somniaTestnetConfig.id]: somniaTestnetConfig,
 } as const;
 
 // Function to get chain by ID
@@ -177,6 +213,7 @@ const ACTIVE_CHAIN_KEY =
         | "titanAI"
         | "amoy"
         | "hedera"
+        | "somnia"
         | undefined) ?? "titanAI";
 
 export const chainMap = {
@@ -195,6 +232,10 @@ export const chainMap = {
   hedera: {
     chain: hederaTestnet,
     config: hederaTestnetConfig,
+  },
+  somnia: {
+    chain: somniaTestnet,
+    config: somniaTestnetConfig,
   },
 } as const;
 

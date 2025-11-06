@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActiveWallet, useDisconnect } from "thirdweb/react";
+import { useActiveWallet, useDisconnect, useActiveAccount } from "thirdweb/react";
 import { useUser } from "@/hooks/useUser";
 import { ThirdwebConnectButton } from "../auth/ThirdwebConnectButton";
 import { useSidebarState } from "@/hooks/useSidebarState";
 import UserDropdown from "./UserDropdown";
 import { ArrowFatLinesUpIcon} from "@phosphor-icons/react";
 import { useTopUpModalState } from "@/hooks/useTopUpModalState";
+import { activeChain, activeChainConfig, hederaTestnet, getChainConfigById } from "@/utils/chains";
 
 export default function Header() {
   const router = useRouter();
@@ -15,7 +16,11 @@ export default function Header() {
   const wallet = useActiveWallet();
   const { clearUser } = useUser();
   const { toggleSidebar } = useSidebarState();
-  const { toggleModal } = useTopUpModalState();
+  const { toggleModal, isOpen: isTopUpModalOpen } = useTopUpModalState();
+
+  // Show Hedera when TopUp modal is open (payment context), otherwise show Somnia
+  const displayChain = isTopUpModalOpen ? hederaTestnet : activeChain;
+  const displayChainConfig = isTopUpModalOpen ? getChainConfigById(hederaTestnet.id) : activeChainConfig;
 
   return (
     <header className="flex items-center justify-between sm:justify-end h-[88px] bg-[#050505] border-b border-[#191919] px-4 sm:px-6">
@@ -44,6 +49,22 @@ export default function Header() {
         DeCenter AI
       </h1>
       <div className="flex items-center gap-3 justify-end">
+        {/* Current Chain Indicator */}
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[#191919] border border-[#2B2B2B] rounded-lg">
+          <div className={`w-2 h-2 rounded-full animate-pulse ${isTopUpModalOpen ? 'bg-blue-500' : 'bg-green-500'}`}></div>
+          <span className="text-xs text-[#C1C1C1] font-medium">
+            {displayChainConfig?.name}
+          </span>
+          <span className="text-xs text-[#5D5D5D]">
+            (Chain ID: {displayChain.id})
+          </span>
+          {isTopUpModalOpen && (
+            <span className="text-xs text-blue-400 font-medium">
+              • Payment
+            </span>
+          )}
+        </div>
+
         {/* Notification Bell */}
         {/* <button
           aria-label="Notifications"

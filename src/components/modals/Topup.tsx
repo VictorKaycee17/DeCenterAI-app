@@ -6,11 +6,12 @@ import { WalletIcon, LightningIcon, X} from '@phosphor-icons/react';
 import {useActiveAccount} from 'thirdweb/react';
 import { prepareContractCall, sendTransaction, getContract } from 'thirdweb';
 import {client} from "@/lib/thirdweb"
-import {activeChain} from "@/utils/chains";
+import {hederaTestnet} from "@/utils/chains";
 import { useTopUpModalState } from '@/hooks/useTopUpModalState';
 import { AccountId } from "@hashgraph/sdk";
 import { toast } from "react-toastify";
 import { getBalance } from "thirdweb/extensions/erc20";
+import {useUser} from "@/hooks/useUser";
 
 
 // USDC contract on Hedera testnet
@@ -30,6 +31,8 @@ export default function TopUpModal() {
     const [txHash, setTxHash] = useState('');
     const [isAssociated, setIsAssociated] = useState(false);
     const [hasUsdcBalance, setHasUsdcBalance] = useState(false);
+    const { clearUser, email, username, profile_image, wallet } = useUser();
+
 
     const creditValue = parseInt(credits) || 0;
     const amount = creditValue; // 1 cent = 1 credit = 1 inference
@@ -120,7 +123,7 @@ export default function TopUpModal() {
             // Get HTS contract
             const htsContract = getContract({
                 client,
-                chain: activeChain,
+                chain: hederaTestnet,
                 address: HTS_CONTRACT_ADDRESS,
             });
 
@@ -180,7 +183,7 @@ export default function TopUpModal() {
             const balance = await getBalance({
                 contract: getContract({
                     client,
-                    chain: activeChain,
+                    chain: hederaTestnet,
                     address: USDC_CONTRACT_ADDRESS,
                 }),
                 address: account.address,
@@ -313,8 +316,8 @@ export default function TopUpModal() {
         try {
             // Get USDC contract
             const usdcContract = getContract({
-client,
-                chain: activeChain,
+                client,
+                chain: hederaTestnet,
                 address: USDC_CONTRACT_ADDRESS,
             });
 
@@ -386,6 +389,7 @@ client,
         }
     };
 
+
     if (!isOpen) {
         return null;
     }
@@ -397,6 +401,7 @@ client,
                 className="fixed inset-0 bg-black/80"
                 onClick={() => !loading && toggleModal()}
             />
+
 
             {/* Modal */}
             <div className="relative bg-[#050505] border border-[#191919] rounded-2xl w-full max-w-md p-6 shadow-2xl">
@@ -424,6 +429,7 @@ client,
                         <WalletIcon size={20} className="text-green-400" />
                         <span className="text-green-400 text-sm">
               Wallet Connected: {account.address.slice(0, 6)}...{account.address.slice(-4)}
+
             </span>
                     </div>
                 ) : (

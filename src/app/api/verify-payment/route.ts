@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createThirdwebClient, getContract, prepareContractCall, sendTransaction } from 'thirdweb';
+import { privateKeyToAccount } from 'thirdweb/wallets';
+import { somniaTestnet, somniaTestnetConfig } from '@/utils/chains';
 
 const HEDERA_TESTNET_MIRROR = 'https://testnet.mirrornode.hedera.com';
 const USDC_TOKEN_ID = '0.0.429274'; // USDC on Hedera testnet
+
+// Somnia UNREAL token configuration
+const UNREAL_TOKEN_ADDRESS = somniaTestnetConfig.custom.tokens.UnrealToken.address;
+const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY;
+const THIRDWEB_CLIENT_ID = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID;
+
+// Create thirdweb client
+const client = createThirdwebClient({
+    clientId: THIRDWEB_CLIENT_ID!,
+});
 
 // Convert EVM address to Hedera account ID
 function evmToHederaId(evmAddress: string): string | null {
@@ -185,6 +198,78 @@ async function verifyUSDCTransfer(
     };
 }
 
+/**
+ * Send UNREAL tokens on Somnia to the user's wallet
+ */
+async function sendUnrealTokens(
+    recipientAddress: string,
+    amount: number
+): Promise<{
+    success: boolean;
+    transactionHash?: string;
+    error?: string;
+}> {
+    try {
+        if (!TREASURY_PRIVATE_KEY) {
+            console.error('❌ TREASURY_PRIVATE_KEY not configured');
+            return { success: false, error: 'Treasury wallet not configured' };
+        }
+
+        console.log('💎 Sending UNREAL tokens on Somnia:', {
+            recipient: recipientAddress,
+            amount: amount,
+            token: UNREAL_TOKEN_ADDRESS
+        });
+
+        // Create treasury account from private key
+        const treasuryAccount = privateKeyToAccount({
+            client,
+            privateKey: TREASURY_PRIVATE_KEY,
+        });
+
+        // Get UNREAL token contract on Somnia
+        const unrealContract = getContract({
+            client,
+            chain: somniaTestnet,
+            address: UNREAL_TOKEN_ADDRESS,
+        });
+
+        // Convert amount to smallest unit (18 decimals for UNREAL)
+        const amountInSmallestUnit = BigInt(amount) * BigInt(10 ** 18);
+
+        // Prepare transfer transaction
+        const transaction = prepareContractCall({
+            contract: unrealContract,
+            method: 'function transfer(address to, uint256 amount) returns (bool)',
+            params: [recipientAddress, amountInSmallestUnit],
+        });
+
+        // Send transaction from treasury wallet
+        const result = await sendTransaction({
+            transaction,
+            account: treasuryAccount,
+        });
+
+        console.log('✅ UNREAL tokens sent successfully:', {
+            transactionHash: result.transactionHash,
+            explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${result.transactionHash}`
+        });
+
+        return {
+            success: true,
+            transactionHash: result.transactionHash,
+        };
+
+    } catch (error) {
+        console.error('❌ Error sending UNREAL tokens:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        return {
+            success: false,
+            error: errorMessage,
+        };
+    }
+}
+
 export async function POST(request: NextRequest) {
     try {
         // TODO: Add authentication check
@@ -267,9 +352,34 @@ export async function POST(request: NextRequest) {
         //   created_at: new Date()
         // });
 
-        // TODO: Send tokens to user's backend wallet
-        // 1. Get user's backend wallet from database using senderAddress
-        // 2. Transfer {credits} tokens to that wallet address
+        // Send UNREAL tokens on Somnia to user's wallet
+        const tokenResult = await sendUnrealTokens(senderAddress, parseInt(credits));
+
+        if (!tokenResult.success) {
+            console.error('❌ Failed to send UNREAL tokens:', tokenResult.error);
+            // Payment was successful on Hedera, but token sending failed
+            // Still return success for payment, but note the token issue
+            return NextResponse.json({
+                success: true,
+                warning: 'Payment confirmed but token distribution failed',
+                tokenError: tokenResult.error,
+                transaction: {
+                    hash: transactionHash,
+                    sender: senderAddress,
+                    receiver: receiverAddress,
+                    amount: parseFloat(amount),
+                    credits: parseInt(credits),
+                    explorerUrl: `https://hashscan.io/testnet/transaction/${transactionHash}`
+                },
+                creditsToAdd: parseInt(credits)
+            });
+        }
+
+        console.log('💎 UNREAL tokens distributed:', {
+            recipient: senderAddress,
+            amount: parseInt(credits),
+            txHash: tokenResult.transactionHash
+        });
 
         // OPTIONAL: Verify transaction in background (async - doesn't block response)
         // This flags fraudulent transactions for manual review
@@ -297,7 +407,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: 'Payment confirmed successfully',
+            message: 'Payment confirmed and UNREAL tokens sent successfully',
             transaction: {
                 hash: transactionHash,
                 sender: senderAddress,
@@ -305,6 +415,11 @@ export async function POST(request: NextRequest) {
                 amount: parseFloat(amount),
                 credits: parseInt(credits),
                 explorerUrl: `https://hashscan.io/testnet/transaction/${transactionHash}`
+            },
+            unrealTokens: {
+                amount: parseInt(credits),
+                transactionHash: tokenResult.transactionHash,
+                explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${tokenResult.transactionHash}`
             },
             creditsToAdd: parseInt(credits)
         });
