@@ -37,6 +37,44 @@ export default function TopUpModal() {
     // Hedera Mirror Node API base URL for testnet
     const MIRROR_NODE_URL = 'https://testnet.mirrornode.hedera.com/api/v1';
 
+    // Poll Mirror Node to verify token association
+    const pollForAssociation = useCallback(async (accountAddress: string, maxRetries = 10): Promise<boolean> => {
+        const hederaAccountId = AccountId.fromEvmAddress(0, 0, accountAddress);
+        const accountIdString = hederaAccountId.toString();
+
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                console.log(`Polling for association... attempt ${i + 1}/${maxRetries}`);
+
+                const response = await fetch(
+                    `${MIRROR_NODE_URL}/accounts/${accountIdString}/tokens?token.id=${USDC_TOKEN_ID}`
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const foundAssociation = data.tokens && data.tokens.length > 0;
+
+                    if (foundAssociation) {
+                        console.log('✅ Association confirmed on Mirror Node!');
+                        return true;
+                    }
+                }
+
+                // Wait 3 seconds before next attempt
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
+        }
+
+        return false; // Association not found after max retries
+    }, []);
+
     const checkAndAssociateToken = useCallback(async () => {
         if (!account) return;
 
@@ -103,15 +141,29 @@ export default function TopUpModal() {
             });
 
             console.log('Token association transaction:', result.transactionHash);
-            setStatus('USDC setup complete! Verifying...');
+            setStatus('Confirming association on blockchain...');
 
-            // Wait a bit for Mirror Node to update
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // Poll Mirror Node to verify association (up to 30 seconds)
+            const verified = await pollForAssociation(account.address, 10);
 
-            // Update association state
-            setIsAssociated(true);
-            toast.success("USDC is now ready to use!");
-            return true;
+            if (verified) {
+                // Association confirmed!
+                setIsAssociated(true);
+                setStatus('✅ USDC ready!');
+                toast.success("USDC is now ready to use!");
+                return true;
+            } else {
+                // Polling timed out - save pending state
+                localStorage.setItem('pendingUsdcAssociation', JSON.stringify({
+                    address: account.address,
+                    timestamp: Date.now(),
+                    txHash: result.transactionHash
+                }));
+
+                setStatus('⏳ Association is processing. Please wait 1 minute and refresh this page.');
+                toast.warning("Association is processing on the blockchain. Please refresh the page in 1 minute.");
+                return false;
+            }
         } catch (error) {
             console.error("Error associating token via HTS:", error);
             const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -119,7 +171,7 @@ export default function TopUpModal() {
             toast.error("Failed to setup USDC token.");
             return false;
         }
-    }, [account]);
+    }, [account, pollForAssociation]);
 
     const checkUsdcBalance = useCallback(async () => {
         if (!account) return;
@@ -146,12 +198,50 @@ export default function TopUpModal() {
         }
     }, [account]);
 
+    // Check for pending associations on modal open
     useEffect(() => {
         if (account && isOpen) {
-            checkAndAssociateToken();
-            checkUsdcBalance();
+            // Check if there's a pending association from previous session
+            const pendingData = localStorage.getItem('pendingUsdcAssociation');
+
+            if (pendingData) {
+                try {
+                    const pending = JSON.parse(pendingData);
+                    const timeSinceSubmit = Date.now() - pending.timestamp;
+
+                    // If less than 5 minutes old and same address, auto-retry verification
+                    if (timeSinceSubmit < 5 * 60 * 1000 && pending.address.toLowerCase() === account.address.toLowerCase()) {
+                        setStatus('Checking for pending association...');
+
+                        pollForAssociation(account.address, 5).then(verified => {
+                            if (verified) {
+                                setIsAssociated(true);
+                                setStatus('✅ USDC ready!');
+                                toast.success("USDC association completed!");
+                                localStorage.removeItem('pendingUsdcAssociation');
+                            } else {
+                                setStatus('⏳ Association still processing. Please try again in 1 minute.');
+                            }
+                        });
+                    } else {
+                        // Too old or different address, clear it
+                        localStorage.removeItem('pendingUsdcAssociation');
+                        checkAndAssociateToken();
+                        checkUsdcBalance();
+                    }
+                } catch (error) {
+                    console.error('Error parsing pending association:', error);
+                    localStorage.removeItem('pendingUsdcAssociation');
+                    checkAndAssociateToken();
+                    checkUsdcBalance();
+                }
+            } else {
+                // No pending association, normal check
+                checkAndAssociateToken();
+                checkUsdcBalance();
+            }
         }
-    }, [account, isOpen, checkAndAssociateToken, checkUsdcBalance]);
+    }, [account, isOpen, checkAndAssociateToken, checkUsdcBalance, pollForAssociation]);
 
     const handleProceed = async () => {
         if (!account) {
@@ -223,7 +313,7 @@ export default function TopUpModal() {
         try {
             // Get USDC contract
             const usdcContract = getContract({
-                client,
+client,
                 chain: activeChain,
                 address: USDC_CONTRACT_ADDRESS,
             });
@@ -392,6 +482,14 @@ export default function TopUpModal() {
                             >
                                 View transaction on HashScan →
                             </a>
+                        )}
+                        {status.includes('Please wait 1 minute and refresh') && (
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="mt-3 w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 transition-colors"
+                            >
+                                Refresh Page
+                            </button>
                         )}
                     </div>
                 )}
