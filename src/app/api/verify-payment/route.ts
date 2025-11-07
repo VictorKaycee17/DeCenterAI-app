@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createThirdwebClient, getContract, prepareContractCall, sendTransaction } from 'thirdweb';
 import { privateKeyToAccount } from 'thirdweb/wallets';
 import { somniaTestnet, somniaTestnetConfig } from '@/utils/chains';
+import { cookies } from 'next/headers';
+import { getUserByWallet } from '@/actions/supabase/users';
+import { supabase } from '@/lib/supabase';
 
 const HEDERA_TESTNET_MIRROR = 'https://testnet.mirrornode.hedera.com';
 const USDC_TOKEN_ID = '0.0.429274'; // USDC on Hedera testnet
@@ -272,14 +275,27 @@ async function sendUnrealTokens(
 
 export async function POST(request: NextRequest) {
     try {
-        // TODO: Add authentication check
-        // const session = await getServerSession();
-        // if (!session) {
-        //     return NextResponse.json(
-        //         { success: false, error: 'Unauthorized' },
-        //         { status: 401 }
-        //     );
-        // }
+        // LAYER 1: Authentication Check
+        const cookieStore = await cookies();
+        const walletCookie = cookieStore.get('tw_wallet')?.value;
+
+        if (!walletCookie) {
+            return NextResponse.json(
+                { success: false, error: 'Unauthorized - Please log in' },
+                { status: 401 }
+            );
+        }
+
+        // Get user from database
+        const userResult = await getUserByWallet(walletCookie);
+        if (!userResult.success || !userResult.data) {
+            return NextResponse.json(
+                { success: false, error: 'User not found' },
+                { status: 401 }
+            );
+        }
+
+        const user = userResult.data;
 
         const body = await request.json();
         const {
@@ -301,32 +317,34 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // TODO: Verify sender address matches logged-in user's wallet
-        // const userWallet = session.user.walletAddress;
-        // if (senderAddress.toLowerCase() !== userWallet.toLowerCase()) {
-        //     return NextResponse.json(
-        //         { success: false, error: 'Sender address mismatch' },
-        //         { status: 403 }
-        //     );
-        // }
+        // LAYER 2: Wallet Ownership Verification
+        if (senderAddress.toLowerCase() !== user.wallet?.toLowerCase()) {
+            console.error('🚨 Wallet mismatch:', {
+                senderAddress,
+                userWallet: user.wallet,
+                userId: user.id
+            });
+            return NextResponse.json(
+                { success: false, error: 'Sender address does not match your wallet' },
+                { status: 403 }
+            );
+        }
 
-        // TODO: Check if transaction hash already processed (prevent replay attacks)
-        // const existing = await supabase
-        //     .from('payments')
-        //     .select('id')
-        //     .eq('transaction_hash', transactionHash)
-        //     .single();
-        //
-        // if (existing) {
-        //     return NextResponse.json(
-        //         { success: false, error: 'Transaction already processed' },
-        //         { status: 400 }
-        //     );
-        // }
+        // LAYER 3: Transaction Deduplication (Prevent Replay Attacks)
+        const { data: existingPayment } = await supabase
+            .from('hedera_hack_payment')
+            .select('id')
+            .eq('transaction_hash', transactionHash)
+            .single();
 
-        // SIMPLE APPROACH: Trust thirdweb transaction hash
-        // Thirdweb only returns a hash if the transaction succeeded on-chain
-        // This is the same approach used by major platforms (Uniswap, OpenSea, etc.)
+        if (existingPayment) {
+            return NextResponse.json(
+                { success: false, error: 'Transaction already processed' },
+                { status: 400 }
+            );
+        }
+
+        // Trust thirdweb transaction hash (Thirdweb only returns hash if transaction succeeded)
 
         console.log('✅ Payment Confirmed and Logged:');
         console.log({
@@ -341,16 +359,6 @@ export async function POST(request: NextRequest) {
             status: 'confirmed',
             explorerUrl: `https://hashscan.io/testnet/transaction/${transactionHash}`
         });
-
-        // TODO: Store payment in database
-        // await supabase.from('payments').insert({
-        //   transaction_hash: transactionHash,
-        //   user_address: senderAddress,
-        //   amount_usdc: amount,
-        //   credits: credits,
-        //   status: 'confirmed',
-        //   created_at: new Date()
-        // });
 
         // Send UNREAL tokens on Somnia to user's wallet
         const tokenResult = await sendUnrealTokens(senderAddress, parseInt(credits));
@@ -381,23 +389,62 @@ export async function POST(request: NextRequest) {
             txHash: tokenResult.transactionHash
         });
 
-        // OPTIONAL: Verify transaction in background (async - doesn't block response)
+        // Store payment in database (after successful token transfer)
+        const { error: insertError } = await supabase
+            .from('hedera_hack_payment')
+            .insert({
+                user_id: user.id,
+                wallet_address: senderAddress,
+                transaction_hash: transactionHash,
+                unreal_transaction_hash: tokenResult.transactionHash,
+                amount_usdc: parseFloat(amount),
+                credits: parseInt(credits),
+                status: 'confirmed',
+                created_at: new Date().toISOString()
+            });
+
+        if (insertError) {
+            console.error('❌ Failed to store payment in database:', insertError);
+            // Payment and tokens sent successfully, but DB insert failed
+            // Not critical - admin can review logs
+        } else {
+            console.log('✅ Payment stored in database:', {
+                userId: user.id,
+                transactionHash,
+                unrealTxHash: tokenResult.transactionHash
+            });
+        }
+
+        // LAYER 4: Background Verification (async - doesn't block response)
         // This flags fraudulent transactions for manual review
         setTimeout(() => {
             verifyUSDCTransfer(transactionHash, senderAddress, receiverAddress, parseFloat(amount))
-                .then(result => {
+                .then(async result => {
                     if (result.verified) {
                         console.log('✅ Background verification succeeded:', result.transaction?.id);
-                        // TODO: Update database: status = 'verified'
+                        // Update database: status = 'verified'
+                        await supabase
+                            .from('hedera_hack_payment')
+                            .update({
+                                status: 'verified',
+                                verified_at: new Date().toISOString()
+                            })
+                            .eq('transaction_hash', transactionHash);
                     } else {
                         console.error('🚨 FRAUD ALERT: Background verification failed!', {
                             transactionHash,
                             senderAddress,
+                            userId: user.id,
                             error: result.error
                         });
-                        // TODO: Update database: status = 'fraud_suspected'
-                        // TODO: Send alert to admin
-                        // TODO: Freeze user's credits for manual review
+                        // Update database: status = 'fraud_suspected'
+                        await supabase
+                            .from('hedera_hack_payment')
+                            .update({ status: 'fraud_suspected' })
+                            .eq('transaction_hash', transactionHash);
+
+                        // TODO: Send alert to admin (email, Slack, etc.)
+                        // TODO: Implement credit freeze mechanism if needed
                     }
                 })
                 .catch(err => {

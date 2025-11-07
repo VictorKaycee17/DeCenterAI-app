@@ -103,12 +103,7 @@ export default function DashboardPage() {
             title="Credits Balance"
             value={`${unrealBalance || 0} ${parseFloat(unrealBalance.toString()) === 1 ? 'Credit' : 'Credits'}`}
             icon={<CloudArrowDown size={42} className={`${isRefreshing ? 'animate-pulse' : ''} text-[#5D5D5D]`} />}
-            details={[
-              {
-                label: "Status",
-                value: isRefreshing ? "Refreshing..." : "Live",
-              },
-            ]}
+            details={[]}
           />
 
           <StatCard
