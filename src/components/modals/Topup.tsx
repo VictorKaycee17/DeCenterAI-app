@@ -276,11 +276,6 @@ export default function TopUpModal() {
             return;
         }
 
-        if (creditValue <= 0) {
-            setStatus('Please enter a valid amount');
-            return;
-        }
-
         setLoading(true);
 
         // Step 1: Handle token association if needed
@@ -330,7 +325,15 @@ export default function TopUpModal() {
             }
         }
 
-        // Step 2: Check USDC balance
+        // Step 2: Validate credit amount (only after association is complete)
+        if (creditValue <= 0) {
+            setStatus('Please enter a valid credit amount to proceed with payment');
+            toast.info('Enter the number of credits you want to purchase');
+            setLoading(false);
+            return;
+        }
+
+        // Step 3: Check USDC balance
         if (!hasUsdcBalance) {
             setStatus("You need to have some USDC in your wallet to top up.");
             toast.error("Insufficient USDC balance.");
@@ -338,7 +341,7 @@ export default function TopUpModal() {
             return;
         }
 
-        // Step 3: Proceed with payment
+        // Step 4: Proceed with payment
         setStatus('Preparing payment...');
 
         try {
