@@ -52,9 +52,16 @@ async function verifyUSDCTransfer(
     retries = 5
 ): Promise<{
     verified: boolean;
-    transaction?: any;
+    transaction?: {
+        id: string;
+        timestamp: string;
+        sender: string;
+        receiver: string;
+        amount: number;
+        tokenId: string;
+    };
     error?: string;
-    details?: any;
+    details?: unknown;
 }> {
 
     // Convert addresses to Hedera format

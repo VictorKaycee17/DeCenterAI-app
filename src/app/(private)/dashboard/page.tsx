@@ -21,7 +21,9 @@ export default function DashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const chainConfig = getChainConfigById(activeChain.id);
-  const unrealTokenAddress = chainConfig?.custom?.tokens?.UnrealToken?.address;
+  const unrealTokenAddress = chainConfig?.custom?.tokens && 'UnrealToken' in chainConfig.custom.tokens
+    ? chainConfig.custom.tokens.UnrealToken?.address
+    : undefined;
 
   // Fetch Unreal token balance (from Somnia testnet)
   const getUnrealTokenBalance = async () => {
