@@ -1,12 +1,13 @@
 import { client } from "@/lib/thirdweb";
 import {
-  activeChain,
   titanAITestnet,
   titanAITestnetConfig,
   torusMainnet,
   torusMainnetConfig,
   amoyTestnet,
   amoyTestnetConfig,
+  somniaTestnet,
+  somniaTestnetConfig,
 } from "@/utils/chains";
 import React from "react";
 import { ConnectButton } from "thirdweb/react";
@@ -28,7 +29,7 @@ export function ThirdwebConnectButton() {
       connectButton={{ label: "Sign-In" }}
       connectModal={{ showThirdwebBranding: true, size: "wide" }}
       theme={"dark"}
-      chain={activeChain}
+      chain={somniaTestnet}
       supportedTokens={{
         [titanAITestnet.id]: [
           {
@@ -49,6 +50,13 @@ export function ThirdwebConnectButton() {
             address: amoyTestnetConfig.custom.tokens.UnrealToken.address,
             name: amoyTestnetConfig.custom.tokens.UnrealToken.name,
             symbol: amoyTestnetConfig.custom.tokens.UnrealToken.symbol,
+          },
+        ],
+        [somniaTestnet.id]: [
+          {
+            address: somniaTestnetConfig.custom.tokens.UnrealToken.address,
+            name: somniaTestnetConfig.custom.tokens.UnrealToken.name,
+            symbol: somniaTestnetConfig.custom.tokens.UnrealToken.symbol,
           },
         ],
       }}
