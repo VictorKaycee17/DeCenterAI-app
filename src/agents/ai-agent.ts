@@ -1,75 +1,109 @@
 #!/usr/bin/env node
 
-import readline from 'node:readline/promises';
-import process from 'node:process';
-import { MemorySaver } from '@langchain/langgraph';
-import { createReactAgentWorkflow } from '@langchain/langgraph/prebuilt';
-import { HumanMessage } from '@langchain/core/messages';
-import  PlaygroundPage  from '../app/(private)/dashboard/playground/page.jsx'
-import { commandHcsCreateTopicTool, commandHcsSubmitTopicMessageTool } from '../tools/hedera-tools.js'
-import { createInstance } from '../api/openrouter-openai.js'
+import { HumanMessage } from "@langchain/core/messages";
+import { MemorySaver } from "@langchain/langgraph";
+import { createReactAgentWorkflow } from "@langchain/langgraph/prebuilt";
+import { allHederaTools } from "@/tools/hedera-tools";
 
+// ---------------------------
+// Unreal API Client
+// ---------------------------
+const unrealApi = {
+  async generate(opts: { prompt: string; model?: string; apiKey?: string }) {
+    const url = process.env.UNREAL_API_URL || "https://api.unreal.com/v1/chat";
+    const apiKey = opts.apiKey || process.env.UNREAL_API_KEY;
+    if (!apiKey) throw new Error("UNREAL_API_KEY is missing");
 
-const llm = createInstance();
-const tools = [ PlaygroundPage, commandHcsCreateTopicTool, commandHcsSubmitTopicMessageTool];
-const checkpointSaver = new MemorySaver();
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        prompt: opts.prompt,
+        model: opts.model || "mixtral-8x22b-instruct",
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`Unreal API: ${resp.status} ${await resp.text()}`);
+
+    const json = await resp.json();
+    return json?.choices?.[0]?.message?.content ??
+           json?.output ??
+           JSON.stringify(json);
+  },
+};
+
+// ---------------------------
+// LLM Wrapper for LangGraph
+// ---------------------------
+const llmWrapper = async () => ({
+  call: async (input: { prompt: string | string[]; apiKey?: string; model?: string }) => {
+    const prompt = Array.isArray(input.prompt) ? input.prompt.join("\n") : input.prompt;
+    const text = await unrealApi.generate({ prompt, model: input.model, apiKey: input.apiKey });
+    return { generations: [[{ text }]] };
+  },
+});
+
+// ---------------------------
+// Create Agent Workflow
+// ---------------------------
 const agent = createReactAgentWorkflow({
-  llm,
-  tools,
-  checkpointSaver,
+  llm: llmWrapper,
+  tools: allHederaTools,
+  checkpointSaver: new MemorySaver(),
 });
 
-const rlp = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+// ---------------------------
+// Main Agent Runner Function
+// ---------------------------
+export async function runAgent({
+  playgroundPrompt,
+  hcsTopic,
+  topicSubmission,
+  apiKey,
+  model,
+}: {
+  playgroundPrompt?: string;
+  hcsTopic?: string;
+  topicSubmission?: string;
+  apiKey?: string;
+  model?: string;
+}): Promise<string> {
+  let systemPrompt = `You are DeCenterAI. 
+If user requests create or submit to Hedera topics, call the relevant tool.`
 
-async function readUserPrompt() {
-  const lines = [];
-  while (true) {
-    const line = await rlp.question('');
-    if (line == '' && lines[lines.length - 1] === '') {
-      return lines.join('\n');
-    }
-    lines.push(line);
+  if (hcsTopic) {
+    systemPrompt += `\nUser wants to create a Hedera Consensus Topic.`;
   }
-}
 
-async function obtainAgentReply(userPrompt: string) {
-  const reply = await agent.invoke(
-    {
-      messages: [new HumanMessage(userPrompt)],
-    },
-    {
-      configurable: { thread_id: '0x0001' },
-    },
+  if (topicSubmission) {
+    systemPrompt += `\nUser wants to submit a message to an HCS topic.`;
+  }
+
+  const userMessage = playgroundPrompt || hcsTopic || topicSubmission;
+
+  const result: any = await agent.invoke(
+    { messages: [new HumanMessage(userMessage)] },
+    { configurable: { thread_id: "hcs-playground-session" } }
   );
 
-  const agentReply = reply.messages[reply.messages.length - 1].content;
-  return agentReply;
+  const last = result?.messages?.[result.messages.length - 1];
+  return last?.content || "No response.";
 }
 
-while (true) {
-  console.log('You:\n');
-  const userPrompt = await readUserPrompt();
-
-  console.log('Agent:\n');
-  const agentReply = await obtainAgentReply(userPrompt);
-  console.log(agentReply);
+// ---------------------------
+// CLI Mode (Optional)
+// ---------------------------
+if (process.argv[1]?.includes("ai-agent.ts")) {
+  (async () => {
+    console.log("DeCenterAI Agent CLI Started — type and press Enter\n");
+    process.stdin.on("data", async (d) => {
+      const text = d.toString().trim();
+      if (!text) return;
+      const out = await runAgent({ playgroundPrompt: text });
+      console.log("\nAgent:", out, "\n");
+    });
+  })();
 }
-
-/*
-const prompt = `Please generate a joke about a car.
-Also generate one about a bar.`;
-*/
-
-// const reply = await agent.invoke(
-//   {
-//     messages: [new HumanMessage(prompt)],
-//   },
-//   {
-//     configurable: { thread_id: '0x0001' },
-//   },
-// );
-
-// console.log(reply.messages[reply.messages.length - 1].content);

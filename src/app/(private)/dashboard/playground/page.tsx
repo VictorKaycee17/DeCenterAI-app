@@ -1,5 +1,7 @@
 "use client";
 
+import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
 import { getUserByWallet } from "@/actions/supabase/users";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
@@ -92,41 +94,39 @@ export default function PlaygroundPage() {
     }
   };
 
-  // --- Send Message to Unreal API ---
-  const handleSendMessage = async () => {
-    if (!input.trim() || !selectedApiKey) {
-      toast.error("Invalid input or missing API key");
-      return;
+       // inside PlaygroundPage component - replace handleSendMessage
+const handleSendMessage = async () => {
+  if (!input.trim() || !selectedApiKey) {
+    toast.error("Invalid input or missing API key");
+    return;
+  }
+  if (!userId) {
+    toast.error("User not found");
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // Call agent backend
+    const resp = await fetch("/api/agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId,
+        apiKey: selectedApiKey,
+        model: selectedModel,
+        prompt: input,
+      }),
+    });
+
+    const json = await resp.json();
+
+    if (!resp.ok || !json.success) {
+      console.error("Agent error", json);
+      throw new Error(json.message || "Agent request failed");
     }
 
-    setLoading(true);
-    try {
-      const data = await getChatCompletion(
-        selectedApiKey,
-        selectedModel,
-        input
-      );
-      const aiResponse = data.choices?.[0]?.message?.content || "No response";
-
-      await saveChatMessage(
-        userId!,
-        input,
-        aiResponse,
-        data.model || selectedModel,
-        data.object || "chat.completion"
-      );
-
-      setInput("");
-      const history = await fetchChatHistory(userId!, 5);
-      setMessages(history);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to get AI response");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+    const aiResponse = json.aiResponse ?? "No response";
   // --- Clear Chat History ---
   const handleClear = async () => {
     if (!userId) return;
