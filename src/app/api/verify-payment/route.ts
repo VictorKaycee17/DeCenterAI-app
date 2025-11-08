@@ -280,7 +280,7 @@ async function sendUnrealTokens(
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             const errorCode = error && typeof error === 'object' && 'cause' in error
-                ? (error.cause as any)?.code
+                ? (error.cause as { code?: string })?.code
                 : undefined;
 
             console.error(`❌ Attempt ${attempt}/${maxRetries} failed:`, {
