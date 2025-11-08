@@ -89,20 +89,14 @@ export default function Header() {
               <ArrowFatLinesUpIcon size={22} />
 
               Top up</button>
+
+        {/* Wallet Connect Button */}
+        <div className="flex items-center">
+          <ThirdwebConnectButton />
+        </div>
+
         {/* User Drop Down */}
         <UserDropdown />
-        {/* Sign Out Button */}
-        {/* <button
-          onClick={handleSignOut}
-          className="rounded-md bg-[#191919] px-4 py-2 text-sm text-[#C1C1C1] hover:bg-[#2B2B2B] transition"
-        >
-          Sign Out
-        </button> */}
-
-        {/* Hidden button to ensure Thirdweb context hydration */}
-        <span className="hidden">
-          <ThirdwebConnectButton />
-        </span>
       </div>
     </header>
   );

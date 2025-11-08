@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { WalletIcon, LightningIcon, X} from '@phosphor-icons/react';
+import { WalletIcon, LightningIcon, X, Copy, Coins} from '@phosphor-icons/react';
 import {useActiveAccount} from 'thirdweb/react';
 import { prepareContractCall, sendTransaction, getContract } from 'thirdweb';
 import {client} from "@/lib/thirdweb"
@@ -602,44 +602,50 @@ export default function TopUpModal() {
                     <div className="mb-4 space-y-2">
                         {/* EVM Wallet Address */}
                         <div
-                            className="p-3 bg-green-900/30 border border-green-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                            className="p-3 bg-[#191919] border border-gray-700 rounded-lg flex items-center justify-between cursor-pointer hover:border-gray-600 transition-colors"
                             onClick={() => {
                                 navigator.clipboard.writeText(account.address);
                                 toast.success("Wallet address copied!");
                             }}
                         >
-                            <WalletIcon size={20} className="text-green-400" />
-                            <span className="text-green-400 text-sm">
-                                Wallet: {account.address.slice(0, 6)}...{account.address.slice(-4)}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <WalletIcon size={16} className="text-gray-400" />
+                                <span className="text-[#C1C1C1] text-sm">
+                                    Wallet: {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                                </span>
+                            </div>
+                            <Copy size={16} className="text-gray-400" />
                         </div>
 
                         {/* Hedera Account ID */}
                         {hederaAccountId && (
                             <div
-                                className="p-3 bg-blue-900/30 border border-blue-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                                className="p-3 bg-[#191919] border border-gray-700 rounded-lg flex items-center justify-between cursor-pointer hover:border-gray-600 transition-colors"
                                 onClick={() => {
                                     navigator.clipboard.writeText(hederaAccountId);
                                     toast.success("Account ID copied!");
                                 }}
                             >
-                                <span className="text-blue-400 text-xs">📋</span>
-                                <span className="text-blue-400 text-sm">
-                                    Hedera Account: {hederaAccountId}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    <WalletIcon size={16} className="text-gray-400" />
+                                    <span className="text-[#C1C1C1] text-sm">
+                                        Account ID: {hederaAccountId}
+                                    </span>
+                                </div>
+                                <Copy size={16} className="text-gray-400" />
                             </div>
                         )}
 
                         {/* USDC Balance */}
-                        <div className="p-3 bg-purple-900/30 border border-purple-700 rounded-lg flex items-center justify-between">
+                        <div className="p-3 bg-[#191919] border border-gray-700 rounded-lg flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <span className="text-purple-400 text-xs">💰</span>
-                                <span className="text-purple-400 text-sm">
+                                <Coins size={16} className="text-gray-400" />
+                                <span className="text-[#C1C1C1] text-sm">
                                     USDC Balance: {usdcBalance} USDC
                                 </span>
                             </div>
                             {isRefreshingBalance && (
-                                <span className="text-purple-400 text-xs animate-spin">↻</span>
+                                <span className="text-gray-400 text-xs animate-spin">↻</span>
                             )}
                         </div>
                     </div>
