@@ -209,75 +209,107 @@ async function verifyUSDCTransfer(
 }
 
 /**
- * Send UNREAL tokens on Somnia to the user's wallet
+ * Send UNREAL tokens on Somnia to the user's wallet with retry logic
  */
 async function sendUnrealTokens(
     recipientAddress: string,
-    amount: number
+    amount: number,
+    maxRetries = 3
 ): Promise<{
     success: boolean;
     transactionHash?: string;
     error?: string;
 }> {
-    try {
-        if (!TREASURY_PRIVATE_KEY) {
-            console.error('❌ TREASURY_PRIVATE_KEY not configured');
-            return { success: false, error: 'Treasury wallet not configured' };
-        }
-
-        console.log('💎 Sending UNREAL tokens on Somnia:', {
-            recipient: recipientAddress,
-            amount: amount,
-            token: UNREAL_TOKEN_ADDRESS
-        });
-
-        // Create treasury account from private key
-        const treasuryAccount = privateKeyToAccount({
-            client,
-            privateKey: TREASURY_PRIVATE_KEY,
-        });
-
-        // Get UNREAL token contract on Somnia
-        const unrealContract = getContract({
-            client,
-            chain: somniaTestnet,
-            address: UNREAL_TOKEN_ADDRESS,
-        });
-
-        // Convert amount to smallest unit (18 decimals for UNREAL)
-        const amountInSmallestUnit = BigInt(amount) * BigInt(10 ** 18);
-
-        // Prepare transfer transaction
-        const transaction = prepareContractCall({
-            contract: unrealContract,
-            method: 'function transfer(address to, uint256 amount) returns (bool)',
-            params: [recipientAddress, amountInSmallestUnit],
-        });
-
-        // Send transaction from treasury wallet
-        const result = await sendTransaction({
-            transaction,
-            account: treasuryAccount,
-        });
-
-        console.log('✅ UNREAL tokens sent successfully:', {
-            transactionHash: result.transactionHash,
-            explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${result.transactionHash}`
-        });
-
-        return {
-            success: true,
-            transactionHash: result.transactionHash,
-        };
-
-    } catch (error) {
-        console.error('❌ Error sending UNREAL tokens:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        return {
-            success: false,
-            error: errorMessage,
-        };
+    if (!TREASURY_PRIVATE_KEY) {
+        console.error('❌ TREASURY_PRIVATE_KEY not configured');
+        return { success: false, error: 'Treasury wallet not configured' };
     }
+
+    console.log('💎 Sending UNREAL tokens on Somnia:', {
+        recipient: recipientAddress,
+        amount: amount,
+        token: UNREAL_TOKEN_ADDRESS,
+        maxRetries
+    });
+
+    // Create treasury account from private key (outside retry loop)
+    const treasuryAccount = privateKeyToAccount({
+        client,
+        privateKey: TREASURY_PRIVATE_KEY,
+    });
+
+    // Get UNREAL token contract on Somnia (outside retry loop)
+    const unrealContract = getContract({
+        client,
+        chain: somniaTestnet,
+        address: UNREAL_TOKEN_ADDRESS,
+    });
+
+    // Convert amount to smallest unit (18 decimals for UNREAL)
+    const amountInSmallestUnit = BigInt(amount) * BigInt(10 ** 18);
+
+    // Retry loop with exponential backoff
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`🔄 Attempt ${attempt}/${maxRetries} to send UNREAL tokens...`);
+
+            // Prepare transfer transaction
+            const transaction = prepareContractCall({
+                contract: unrealContract,
+                method: 'function transfer(address to, uint256 amount) returns (bool)',
+                params: [recipientAddress, amountInSmallestUnit],
+            });
+
+            // Send transaction from treasury wallet
+            const result = await sendTransaction({
+                transaction,
+                account: treasuryAccount,
+            });
+
+            console.log('✅ UNREAL tokens sent successfully:', {
+                attempt,
+                transactionHash: result.transactionHash,
+                explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${result.transactionHash}`
+            });
+
+            return {
+                success: true,
+                transactionHash: result.transactionHash,
+            };
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorCode = error && typeof error === 'object' && 'cause' in error
+                ? (error.cause as any)?.code
+                : undefined;
+
+            console.error(`❌ Attempt ${attempt}/${maxRetries} failed:`, {
+                error: errorMessage,
+                code: errorCode,
+                recipient: recipientAddress
+            });
+
+            // If this is the last attempt, return the error
+            if (attempt === maxRetries) {
+                console.error('❌ All retry attempts exhausted for UNREAL token send');
+                return {
+                    success: false,
+                    error: `Failed after ${maxRetries} attempts: ${errorMessage}`,
+                };
+            }
+
+            // Calculate exponential backoff delay: 2s, 4s, 8s
+            const delayMs = Math.pow(2, attempt) * 1000;
+            console.log(`⏳ Waiting ${delayMs / 1000}s before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+
+    // Should never reach here, but TypeScript needs it
+    return {
+        success: false,
+        error: 'Unexpected error in retry loop',
+    };
 }
 
 export async function POST(request: NextRequest) {

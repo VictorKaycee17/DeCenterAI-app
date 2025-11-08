@@ -31,6 +31,10 @@ export default function TopUpModal() {
     const [txHash, setTxHash] = useState('');
     const [isAssociated, setIsAssociated] = useState(false);
     const [hasUsdcBalance, setHasUsdcBalance] = useState(false);
+    const [hederaAccountId, setHederaAccountId] = useState<string | null>(null);
+    const [usdcBalance, setUsdcBalance] = useState<string>('0.00');
+    const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+    const [showRetryButton, setShowRetryButton] = useState(false);
     const { clearUser, email, username, profile_image, wallet } = useUser();
 
 
@@ -39,6 +43,64 @@ export default function TopUpModal() {
 
     // Hedera Mirror Node API base URL for testnet
     const MIRROR_NODE_URL = 'https://testnet.mirrornode.hedera.com/api/v1';
+
+    // Fetch real Hedera Account ID from Mirror Node
+    const fetchHederaAccountId = useCallback(async (evmAddress: string): Promise<string | null> => {
+        try {
+            const response = await fetch(`${MIRROR_NODE_URL}/accounts/${evmAddress}`);
+
+            if (response.status === 404) {
+                return null; // Account doesn't exist yet
+            }
+
+            if (!response.ok) {
+                console.error('Failed to fetch account ID:', response.statusText);
+                return null;
+            }
+
+            const data = await response.json();
+            return data.account; // Returns "0.0.123456" format
+        } catch (error) {
+            console.error('Error fetching Hedera Account ID:', error);
+            return null;
+        }
+    }, []);
+
+    // Poll Mirror Node to check HBAR balance
+    const pollForHbarBalance = useCallback(async (evmAddress: string, minBalance = 0.1, maxRetries = 10): Promise<boolean> => {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                console.log(`Polling for HBAR balance... attempt ${i + 1}/${maxRetries}`);
+
+                const response = await fetch(`${MIRROR_NODE_URL}/accounts/${evmAddress}`);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const hbarBalance = data.balance?.balance || 0;
+                    const hbarInUnits = hbarBalance / 100_000_000; // Convert tinybars to HBAR
+
+                    console.log(`Current HBAR balance: ${hbarInUnits} HBAR`);
+
+                    if (hbarInUnits >= minBalance) {
+                        console.log(`✅ HBAR balance sufficient: ${hbarInUnits} HBAR`);
+                        return true;
+                    }
+                }
+
+                // Wait 2 seconds before next attempt
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+        }
+
+        return false; // HBAR not arrived after max retries
+    }, []);
 
     // Poll Mirror Node to verify token association
     const pollForAssociation = useCallback(async (accountAddress: string, maxRetries = 10): Promise<boolean> => {
@@ -83,24 +145,27 @@ export default function TopUpModal() {
 
         setStatus("Checking token association...");
         try {
-            // Convert EVM address to Hedera Account ID format
-            const hederaAccountId = AccountId.fromEvmAddress(0, 0, account.address);
-            const accountIdString = hederaAccountId.toString();
+            // Fetch real Hedera Account ID from Mirror Node
+            const accountIdString = await fetchHederaAccountId(account.address);
+
+            // Handle account not found - account not indexed yet (normal for fresh wallets)
+            if (!accountIdString) {
+                console.log('Account not found in Mirror Node yet. This is normal for fresh wallets.');
+                setStatus("💡 Your wallet is new. USDC setup required. Click 'Setup USDC' to continue.");
+                setIsAssociated(false);
+                setHederaAccountId(null); // No account yet
+                return;
+            }
+
+            // Store Hedera Account ID (account exists on-chain)
+            setHederaAccountId(accountIdString);
 
             // Use Mirror Node API to check token associations (free, no operator needed)
             const response = await fetch(
                 `${MIRROR_NODE_URL}/accounts/${accountIdString}/tokens?token.id=${USDC_TOKEN_ID}`
             );
 
-            // Handle 404 - account not indexed yet (normal for fresh wallets)
-            if (response.status === 404) {
-                console.log('Account not found in Mirror Node yet. This is normal for fresh wallets.');
-                setStatus("💡 Your wallet is new. USDC setup required. Click 'Setup USDC' to continue.");
-                setIsAssociated(false);
-                return;
-            }
-
-            // Handle other errors
+            // Handle errors
             if (!response.ok) {
                 throw new Error(`Mirror Node API error: ${response.statusText}`);
             }
@@ -122,88 +187,110 @@ export default function TopUpModal() {
             setIsAssociated(false);
             toast.error("Failed to check token association.");
         }
-    }, [account]);
+    }, [account, fetchHederaAccountId]);
 
-    const associateTokenViaHTS = useCallback(async () => {
+    const associateTokenViaHTS = useCallback(async (maxRetries = 1) => {
         if (!account) return false;
 
-        setStatus("Setting up USDC on your wallet...");
-        try {
-            // Get HTS contract
-            const htsContract = getContract({
-                client,
-                chain: hederaTestnet,
-                address: HTS_CONTRACT_ADDRESS,
-            });
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt === 1) {
+                    setStatus("Setting up USDC on your wallet...");
+                } else {
+                    setStatus(`⏳ Network syncing... Retry ${attempt}/${maxRetries}`);
+                }
 
-            // Prepare associateToken transaction
-            // function associateToken(address account, address token) external returns (int64 responseCode)
-            const transaction = prepareContractCall({
-                contract: htsContract,
-                method: 'function associateToken(address account, address token) external returns (int64)',
-                params: [account.address, USDC_CONTRACT_ADDRESS],
-                gas: BigInt(800_000), // Explicit gas limit for HTS operations
-            });
+                // Get HTS contract
+                const htsContract = getContract({
+                    client,
+                    chain: hederaTestnet,
+                    address: HTS_CONTRACT_ADDRESS,
+                });
 
-            setStatus('Processing USDC setup...');
+                // Prepare associateToken transaction
+                // function associateToken(address account, address token) external returns (int64 responseCode)
+                const transaction = prepareContractCall({
+                    contract: htsContract,
+                    method: 'function associateToken(address account, address token) external returns (int64)',
+                    params: [account.address, USDC_CONTRACT_ADDRESS],
+                });
 
-            // In-app wallet auto-signs the association transaction (no popup needed!)
-            const result = await sendTransaction({
-                transaction,
-                account,
-            });
+                setStatus(attempt === 1 ? 'Processing USDC setup...' : `⏳ Retrying... Attempt ${attempt}/${maxRetries}`);
 
-            console.log('Token association transaction:', result.transactionHash);
-            setStatus('Confirming association on blockchain...');
+                // In-app wallet auto-signs the association transaction (no popup needed!)
+                const result = await sendTransaction({
+                    transaction,
+                    account,
+                });
 
-            // Poll Mirror Node to verify association (up to 30 seconds)
-            const verified = await pollForAssociation(account.address, 10);
+                console.log('Token association transaction:', result.transactionHash);
+                setStatus('Confirming association on blockchain...');
 
-            if (verified) {
-                // Association confirmed!
-                setIsAssociated(true);
-                setStatus('✅ USDC ready!');
-                toast.success("USDC is now ready to use!");
-                return true;
-            } else {
-                // Polling timed out - save pending state
-                localStorage.setItem('pendingUsdcAssociation', JSON.stringify({
-                    address: account.address,
-                    timestamp: Date.now(),
-                    txHash: result.transactionHash
-                }));
+                // Poll Mirror Node to verify association (up to 30 seconds)
+                const verified = await pollForAssociation(account.address, 10);
 
-                setStatus('⏳ Association is processing. Please wait 1 minute and refresh this page.');
-                toast.warning("Association is processing on the blockchain. Please refresh the page in 1 minute.");
+                if (verified) {
+                    // Association confirmed!
+                    setIsAssociated(true);
+                    setStatus('✅ USDC ready!');
+                    toast.success("USDC is now ready to use!");
+
+                    // Refresh account data to update Account ID display
+                    await checkAndAssociateToken();
+
+                    return true;
+                } else {
+                    // Polling timed out - save pending state
+                    localStorage.setItem('pendingUsdcAssociation', JSON.stringify({
+                        address: account.address,
+                        timestamp: Date.now(),
+                        txHash: result.transactionHash
+                    }));
+
+                    setStatus('⏳ Association is processing. Please wait 1 minute and refresh this page.');
+                    toast.warning("Association is processing on the blockchain. Please refresh the page in 1 minute.");
+                    return false;
+                }
+            } catch (error) {
+                console.error(`Error associating token via HTS (attempt ${attempt}/${maxRetries}):`, error);
+
+                // Extract detailed error message
+                let errorMessage = "Unknown error";
+                if (error instanceof Error) {
+                    errorMessage = error.message;
+                } else if (typeof error === 'object' && error !== null) {
+                    // Handle blockchain errors that aren't standard Error objects
+                    const err = error as unknown as { reason?: string; message?: string; data?: { message?: string } };
+                    if (err.reason) errorMessage = err.reason;
+                    else if (err.message) errorMessage = err.message;
+                    else if (err.data?.message) errorMessage = err.data.message;
+                    else errorMessage = JSON.stringify(error);
+                }
+
+                console.error("Detailed error message:", errorMessage);
+
+                // Check if it's an "Insufficient funds" error and we have retries left
+                if (errorMessage.includes('Insufficient funds') && attempt < maxRetries) {
+                    console.log(`Consensus lag detected. Retrying in 2 seconds... (${attempt}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    continue; // Retry
+                }
+
+                // Other errors or final retry failed
+                setStatus(`Error setting up USDC: ${errorMessage}`);
+                toast.error("Failed to setup USDC token. Check console for details.");
                 return false;
             }
-        } catch (error) {
-            console.error("Error associating token via HTS:", error);
-
-            // Extract detailed error message
-            let errorMessage = "Unknown error";
-            if (error instanceof Error) {
-                errorMessage = error.message;
-            } else if (typeof error === 'object' && error !== null) {
-                // Handle blockchain errors that aren't standard Error objects
-                const err = error as unknown as { reason?: string; message?: string; data?: { message?: string } };
-                if (err.reason) errorMessage = err.reason;
-                else if (err.message) errorMessage = err.message;
-                else if (err.data?.message) errorMessage = err.data.message;
-                else errorMessage = JSON.stringify(error);
-            }
-
-            console.error("Detailed error message:", errorMessage);
-            setStatus(`Error setting up USDC: ${errorMessage}`);
-            toast.error("Failed to setup USDC token. Check console for details.");
-            return false;
         }
-    }, [account, pollForAssociation]);
+
+        return false; // All retries exhausted
+    }, [account, pollForAssociation, checkAndAssociateToken]);
 
     const checkUsdcBalance = useCallback(async () => {
         if (!account) return;
 
         try {
+            setIsRefreshingBalance(true);
             const balance = await getBalance({
                 contract: getContract({
                     client,
@@ -214,6 +301,10 @@ export default function TopUpModal() {
             });
             // getBalance returns a TokenBalance object, check its value
             const readableBalance = Number(balance.value) / (10 ** balance.decimals); // Use token decimals for accurate conversion
+
+            // Store formatted balance
+            setUsdcBalance(readableBalance.toFixed(2));
+
             if (readableBalance > 0) {
                 setHasUsdcBalance(true);
             } else {
@@ -222,6 +313,9 @@ export default function TopUpModal() {
         } catch (error) {
             console.error("Error checking USDC balance:", error);
             setHasUsdcBalance(false);
+            setUsdcBalance('0.00');
+        } finally {
+            setIsRefreshingBalance(false);
         }
     }, [account]);
 
@@ -270,6 +364,45 @@ export default function TopUpModal() {
         }
     }, [account, isOpen, checkAndAssociateToken, checkUsdcBalance, pollForAssociation]);
 
+    // Poll USDC balance every 5 seconds while modal is open
+    useEffect(() => {
+        if (!account || !isOpen) return;
+
+        // Initial check
+        checkUsdcBalance();
+
+        // Poll every 5 seconds
+        const balanceInterval = setInterval(() => {
+            checkUsdcBalance();
+        }, 5000);
+
+        return () => clearInterval(balanceInterval);
+    }, [account, isOpen, checkUsdcBalance]);
+
+    // Manual retry handler for association
+    const handleRetryAssociation = async () => {
+        if (!account) return;
+
+        setLoading(true);
+        setShowRetryButton(false);
+
+        setStatus('Retrying USDC setup...');
+
+        const associated = await associateTokenViaHTS(3);
+        if (!associated) {
+            // Still failed - show button again
+            setStatus('⚠️ Network sync delayed. HBAR confirmed, but association pending. Click "Retry Setup" below.');
+            setShowRetryButton(true);
+            setLoading(false);
+            return;
+        }
+
+        // Success
+        setShowRetryButton(false);
+        setLoading(false);
+        toast.success("USDC setup completed!");
+    };
+
     const handleProceed = async () => {
         if (!account) {
             setStatus('Please connect your wallet first');
@@ -304,16 +437,32 @@ export default function TopUpModal() {
                     setIsAssociated(true);
                     setStatus("✅ Wallet is ready for USDC!");
                 } else if (prepResult.needsAssociation) {
-                    // Backend sent HBAR, wait for it to arrive for gas fees
+                    // Backend sent HBAR, poll to verify it arrived for gas fees
                     setStatus('⏳ Waiting for HBAR to arrive for gas fees...');
-                    await new Promise(resolve => setTimeout(resolve, 8000)); // Wait 8 seconds
 
-                    // Now associate token
-                    const associated = await associateTokenViaHTS();
-                    if (!associated) {
+                    const hbarArrived = await pollForHbarBalance(account.address, 0.1, 10);
+
+                    if (!hbarArrived) {
+                        setStatus('❌ HBAR did not arrive in time. Please try again.');
+                        toast.error("HBAR for gas fees did not arrive. Please try again.");
                         setLoading(false);
                         return;
                     }
+
+                    setStatus('✅ HBAR arrived! Setting up USDC...');
+
+                    // Try association with auto-retry (max 3 attempts)
+                    const associated = await associateTokenViaHTS(3);
+                    if (!associated) {
+                        // All retries failed - show manual retry button
+                        setStatus('⚠️ Network sync delayed. HBAR confirmed, but association pending. Click "Retry Setup" below.');
+                        setShowRetryButton(true);
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Success - hide retry button if it was shown
+                    setShowRetryButton(false);
                 }
             } catch (error) {
                 console.error('Association error:', error);
@@ -450,25 +599,56 @@ export default function TopUpModal() {
 
                 {/* Wallet Connection Status */}
                 {account ? (
-                    <div
-                        className="mb-4 p-3 bg-green-900/30 border border-green-700 rounded-lg flex items-center gap-2 cursor-pointer"
-                        onClick={() => {
-                            navigator.clipboard.writeText(account.address);
-                            toast.success("Wallet address copied!");
-                        }}
-                    >
-                        <WalletIcon size={20} className="text-green-400" />
-                        <span className="text-green-400 text-sm">
-              Wallet Connected: {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                    <div className="mb-4 space-y-2">
+                        {/* EVM Wallet Address */}
+                        <div
+                            className="p-3 bg-green-900/30 border border-green-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                            onClick={() => {
+                                navigator.clipboard.writeText(account.address);
+                                toast.success("Wallet address copied!");
+                            }}
+                        >
+                            <WalletIcon size={20} className="text-green-400" />
+                            <span className="text-green-400 text-sm">
+                                Wallet: {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                            </span>
+                        </div>
 
-            </span>
+                        {/* Hedera Account ID */}
+                        {hederaAccountId && (
+                            <div
+                                className="p-3 bg-blue-900/30 border border-blue-700 rounded-lg flex items-center gap-2 cursor-pointer"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(hederaAccountId);
+                                    toast.success("Account ID copied!");
+                                }}
+                            >
+                                <span className="text-blue-400 text-xs">📋</span>
+                                <span className="text-blue-400 text-sm">
+                                    Hedera Account: {hederaAccountId}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* USDC Balance */}
+                        <div className="p-3 bg-purple-900/30 border border-purple-700 rounded-lg flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-purple-400 text-xs">💰</span>
+                                <span className="text-purple-400 text-sm">
+                                    USDC Balance: {usdcBalance} USDC
+                                </span>
+                            </div>
+                            {isRefreshingBalance && (
+                                <span className="text-purple-400 text-xs animate-spin">↻</span>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-lg flex items-center gap-2">
                         <WalletIcon size={20} className="text-yellow-400" />
                         <span className="text-yellow-400 text-sm">
-              Please connect your wallet to proceed
-            </span>
+                            Please connect your wallet to proceed
+                        </span>
                     </div>
                 )}
 
@@ -541,11 +721,14 @@ export default function TopUpModal() {
                         Cancel
                     </button>
                     <button
-                        onClick={handleProceed}
+                        onClick={showRetryButton ? handleRetryAssociation : handleProceed}
                         disabled={loading || !account || (isAssociated && creditValue <= 0)}
                         className="flex-1 bg-white  cursor-pointer text-black rounded-lg py-3 font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Processing...' : (!isAssociated ? 'Setup USDC' : 'Proceed')}
+                        {loading ? 'Processing...' :
+                         showRetryButton ? 'Retry Setup' :
+                         !isAssociated ? 'Setup USDC' :
+                         'Proceed'}
                     </button>
                 </div>
             </div>

@@ -150,7 +150,10 @@ export const somniaTestnetConfig = {
   },
   rpcUrls: {
     default: {
-      http: ["https://dream-rpc.somnia.network"],
+      http: [
+        "https://dream-rpc.somnia.network",
+        // Add more fallback RPCs here as they become available
+      ],
     },
   },
   blockExplorers: {
