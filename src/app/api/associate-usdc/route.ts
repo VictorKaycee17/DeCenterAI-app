@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
         if (accountInfoResponse.ok) {
             const accountData = await accountInfoResponse.json();
             const hbarBalance = parseInt(accountData.balance?.balance || '0');
-            // If user has more than 0.05 HBAR (50000000 tinybars), they don't need more
-            if (hbarBalance > 50000000) {
+            // If user has more than 5.0 HBAR (500000000 tinybars), they don't need more
+            if (hbarBalance > 500000000) {
                 needsHbar = false;
             }
         }
@@ -75,10 +75,10 @@ export async function POST(request: NextRequest) {
         try {
             // Send HBAR to user account for association fee (if needed)
             if (needsHbar) {
-                console.log(`Sending 0.5 HBAR to ${accountIdString} for association fee...`);
+                console.log(`Sending 5.0 HBAR to ${accountIdString} for association fee...`);
                 const hbarTransferTx = await new TransferTransaction()
-                    .addHbarTransfer(operatorId, new Hbar(-0.5)) // Deduct from service account
-                    .addHbarTransfer(userAccountId, new Hbar(0.5)) // Send to user
+                    .addHbarTransfer(operatorId, new Hbar(-5.0)) // Deduct from service account
+                    .addHbarTransfer(userAccountId, new Hbar(5.0)) // Send to user
                     .execute(client);
 
                 const hbarReceipt = await hbarTransferTx.getReceipt(client);
