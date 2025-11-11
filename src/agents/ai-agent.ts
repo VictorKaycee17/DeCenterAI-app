@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { HumanMessage } from "@langchain/core/messages";
-import { MemorySaver } from "@langchain/langgraph";
-import { createReactAgentWorkflow } from "@langchain/langgraph/prebuilt";
+import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { MemorySaver, StateGraph, MessagesAnnotation, START, END } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { allHederaTools } from "@/tools/hedera-tools";
 
 // ---------------------------
@@ -26,33 +26,71 @@ const unrealApi = {
       }),
     });
 
-    if (!resp.ok) throw new Error(`Unreal API: ${resp.status} ${await resp.text()}`);
+    if (!resp.ok)
+      throw new Error(`Unreal API: ${resp.status} ${await resp.text()}`);
 
     const json = await resp.json();
-    return json?.choices?.[0]?.message?.content ??
-           json?.output ??
-           JSON.stringify(json);
+    return (
+      json?.choices?.[0]?.message?.content ??
+      json?.output ??
+      JSON.stringify(json)
+    );
   },
 };
 
 // ---------------------------
 // LLM Wrapper for LangGraph
 // ---------------------------
-const llmWrapper = async () => ({
-  call: async (input: { prompt: string | string[]; apiKey?: string; model?: string }) => {
-    const prompt = Array.isArray(input.prompt) ? input.prompt.join("\n") : input.prompt;
-    const text = await unrealApi.generate({ prompt, model: input.model, apiKey: input.apiKey });
-    return { generations: [[{ text }]] };
+const llmWrapper = {
+  invoke: async (input: any) => {
+    const messages = input.messages || [];
+    const lastMessage = messages[messages.length - 1];
+    const prompt = lastMessage?.content || "";
+    
+    const text = await unrealApi.generate({
+      prompt,
+      model: input.model,
+      apiKey: input.apiKey,
+    });
+    
+    return new AIMessage({ content: text });
   },
-});
+};
+
+// ---------------------------
+// Agent Node Functions
+// ---------------------------
+const callModel = async (state: typeof MessagesAnnotation.State) => {
+  const response = await llmWrapper.invoke(state);
+  return { messages: [response] };
+};
+
+const shouldContinue = (state: typeof MessagesAnnotation.State) => {
+  const messages = state.messages;
+  const lastMessage = messages[messages.length - 1];
+  
+  // If the LLM makes a tool call, then we route to the "tools" node
+  if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+    return "tools";
+  }
+  // Otherwise, we stop (reply to the user)
+  return END;
+};
 
 // ---------------------------
 // Create Agent Workflow
 // ---------------------------
-const agent = createReactAgentWorkflow({
-  llm: llmWrapper,
-  tools: allHederaTools,
-  checkpointSaver: new MemorySaver(),
+const toolNode = new ToolNode(allHederaTools);
+
+const workflow = new StateGraph(MessagesAnnotation)
+  .addNode("agent", callModel)
+  .addNode("tools", toolNode)
+  .addEdge(START, "agent")
+  .addConditionalEdges("agent", shouldContinue)
+  .addEdge("tools", "agent");
+
+const agent = workflow.compile({
+  checkpointer: new MemorySaver(),
 });
 
 // ---------------------------
@@ -71,8 +109,8 @@ export async function runAgent({
   apiKey?: string;
   model?: string;
 }): Promise<string> {
-  let systemPrompt = `You are DeCenterAI. 
-If user requests create or submit to Hedera topics, call the relevant tool.`
+  let systemPrompt = `You are DeCenterAI.
+If user requests create or submit to Hedera topics, call the relevant tool.`;
 
   if (hcsTopic) {
     systemPrompt += `\nUser wants to create a Hedera Consensus Topic.`;
@@ -83,10 +121,14 @@ If user requests create or submit to Hedera topics, call the relevant tool.`
   }
 
   const userMessage = playgroundPrompt || hcsTopic || topicSubmission;
+  
+  if (!userMessage) {
+    throw new Error("At least one of playgroundPrompt, hcsTopic, or topicSubmission must be provided");
+  }
 
   const result: any = await agent.invoke(
     { messages: [new HumanMessage(userMessage)] },
-    { configurable: { thread_id: "hcs-playground-session" } }
+    { configurable: { thread_id: "hcs-playground-session" } },
   );
 
   const last = result?.messages?.[result.messages.length - 1];
