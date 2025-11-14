@@ -3,8 +3,7 @@
 import {
   createUnrealApiKey,
   deleteApiKey,
-  getAllUnrealApiKeys,
-} from "@/actions/unreal/api";
+} from "@/actions/unreal/api"; // ✅ keep only these two
 import { getUserByWallet } from "@/actions/supabase/users";
 import {
   getApiKeysByUser,
@@ -30,7 +29,7 @@ export default function AgentsPage() {
   const [loading, setLoading] = useState(false);
   const [isUnrealTokenValid, setIsUnrealTokenValid] = useState(true);
 
-  // 🔄 Fetch and sync API keys
+  // 🔄 Fetch and sync API keys (Supabase only)
   const fetchAndSyncApiKeys = async () => {
     if (!userAccount?.address) return;
     setLoading(true);
@@ -42,24 +41,16 @@ export default function AgentsPage() {
 
       const { id: userId, unreal_token } = userRes.data;
 
-      // Validate Unreal token
+      // ✅ Validate Unreal token
       if (unreal_token) {
         const verifyRes = await verifyUnrealSessionToken(unreal_token);
         setIsUnrealTokenValid(verifyRes.success);
       } else setIsUnrealTokenValid(false);
 
-      // Fetch Unreal keys
-      const unrealKeysRes = await getAllUnrealApiKeys(userAccount.address);
-      if (!unrealKeysRes.success) {
-        toast.error(unrealKeysRes.message || "Failed to fetch API keys");
-      }
+      // ✅ Sync Supabase only (no Unreal API fetch)
+      await syncApiKeysWithUnreal(userId, []);
 
-      // Sync Supabase if needed
-      if (unrealKeysRes.data?.length) {
-        await syncApiKeysWithUnreal(userId, unrealKeysRes.data);
-      }
-
-      // Fetch synced keys
+      // ✅ Fetch updated keys
       const apiKeysRes = await getApiKeysByUser(userId);
       if (!apiKeysRes.success)
         throw new Error("Failed to fetch API keys from Supabase");

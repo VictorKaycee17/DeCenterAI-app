@@ -1,23 +1,21 @@
 "use client";
 
-import { tool } from '@langchain/core/tools';
-import { z } from 'zod';
-import { getUserByWallet } from "@/actions/supabase/users";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 import { useActiveAccount, useActiveWallet } from "thirdweb/react";
 import { models } from "@/utils/models";
 import TokenInvalidMessage from "@/components/messages/TokenInvalidMessage";
-import { verifyUnrealSessionToken } from "@/actions/unreal/auth";
 import Spinner from "@/components/ui/icons/Spinner";
+import { BinIcon } from "@/components/ui/icons";
+
+import { getUserByWallet } from "@/actions/supabase/users";
+import { verifyUnrealSessionToken } from "@/actions/unreal/auth";
 import {
   deleteAllChatHistory,
   fetchChatHistory,
   saveChatMessage,
 } from "@/actions/supabase/chat_history";
-import { getChatCompletion } from "@/actions/unreal/chat";
 import { getApiKeysByUser } from "@/actions/supabase/api_keys";
-import { BinIcon } from "@/components/ui/icons";
 
 interface ChatMessage {
   id: number;
@@ -53,14 +51,15 @@ export default function PlaygroundPage() {
   const userAccount = useActiveAccount();
   const userWallet = useActiveWallet();
 
-  // --- Fetch user info and chat history ---
+  // ----------------------------
+  // Fetch User + Chat History
+  // ----------------------------
   const fetchUser = async () => {
     if (!userAccount?.address) return;
 
     try {
       const userRes = await getUserByWallet(userAccount.address);
-      if (!userRes.success || !userRes.data)
-        throw new Error("Failed to fetch user data");
+      if (!userRes.success || !userRes.data) throw new Error("Failed to fetch user data");
 
       const { id, unreal_token } = userRes.data;
       setUserId(id);
@@ -69,7 +68,9 @@ export default function PlaygroundPage() {
       if (unreal_token) {
         const verifyRes = await verifyUnrealSessionToken(unreal_token);
         setIsUnrealTokenValid(verifyRes.success);
-      } else setIsUnrealTokenValid(false);
+      } else {
+        setIsUnrealTokenValid(false);
+      }
 
       const history = await fetchChatHistory(id, 5);
       setMessages(history);
@@ -79,13 +80,15 @@ export default function PlaygroundPage() {
     }
   };
 
-  // --- Fetch API Keys ---
-  const fetchApiKeys = async (userId: number) => {
+  // ----------------------------
+  // Fetch API Keys for User
+  // ----------------------------
+  const fetchApiKeys = async (uid: number) => {
     try {
-      const apiKeysRes = await getApiKeysByUser(userId);
-      if (!apiKeysRes.success) throw new Error("Failed to fetch API keys");
+      const res = await getApiKeysByUser(uid);
+      if (!res.success) throw new Error("Failed to fetch API keys");
 
-      const keys = apiKeysRes.data || [];
+      const keys = res.data || [];
       setApiKeys(keys);
       setSelectedApiKey(keys[0]?.api_key || unrealToken || "");
     } catch (err) {
@@ -94,40 +97,58 @@ export default function PlaygroundPage() {
     }
   };
 
-       // inside PlaygroundPage component - replace handleSendMessage
-const handleSendMessage = async () => {
-  if (!input.trim() || !selectedApiKey) {
-    toast.error("Invalid input or missing API key");
-    return;
-  }
-  if (!userId) {
-    toast.error("User not found");
-    return;
-  }
+  // ----------------------------
+  // Send Message → Agent → Unreal → Hedera
+  // ----------------------------
+  const handleSendMessage = async () => {
+    if (!input.trim()) return toast.error("Enter a message");
+    if (!selectedApiKey) return toast.error("Missing API key");
+    if (!userId) return toast.error("User not found");
 
-  setLoading(true);
-  try {
-    // Call agent backend
-    const resp = await fetch("/api/agent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    setLoading(true);
+    try {
+      const resp = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          apiKey: selectedApiKey,
+          model: selectedModel,
+          prompt: input,
+        }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok || !data.success) {
+        console.error("Agent error", data);
+        throw new Error(data.message || "Agent failed");
+      }
+
+      const aiResponse = data.aiResponse ?? "No response";
+
+      await saveChatMessage(
         userId,
-        apiKey: selectedApiKey,
-        model: selectedModel,
-        prompt: input,
-      }),
-    });
+        input,
+        aiResponse,
+        selectedModel,
+        data.object || "chat.completion"
+      );
 
-    const json = await resp.json();
-
-    if (!resp.ok || !json.success) {
-      console.error("Agent error", json);
-      throw new Error(json.message || "Agent request failed");
+      setInput("");
+      const history = await fetchChatHistory(userId, 5);
+      setMessages(history);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to get AI response");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const aiResponse = json.aiResponse ?? "No response";
-  // --- Clear Chat History ---
+  // ----------------------------
+  // Clear Chat History
+  // ----------------------------
   const handleClear = async () => {
     if (!userId) return;
     setLoading(true);
@@ -135,16 +156,18 @@ const handleSendMessage = async () => {
       await deleteAllChatHistory(userId);
       setMessages([]);
       toast.info("Chat history cleared");
-    } catch (err) {
+    } catch {
       toast.error("Failed to clear chat history");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Effects ---
+  // ----------------------------
+  // Effects
+  // ----------------------------
   useEffect(() => {
-    fetchUser();
+    if (userAccount?.address) fetchUser();
   }, [userAccount]);
 
   useEffect(() => {
@@ -155,7 +178,9 @@ const handleSendMessage = async () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // --- UI ---
+  // ----------------------------
+  // UI
+  // ----------------------------
   return (
     <div className="flex-1 bg-[#050505] min-h-screen">
       {!isUnrealTokenValid && (
@@ -172,32 +197,34 @@ const handleSendMessage = async () => {
           <h1 className="text-[#F5F5F5] text-2xl font-normal">Playground</h1>
 
           <div className="flex flex-wrap gap-3 items-center">
+            {/* Model Selector */}
             <div className="flex items-center gap-2">
               <label className="text-[#C1C1C1] text-sm">Model:</label>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="h-10 px-3 bg-[#191919] border border-[#232323] rounded-[14px] text-[#8F8F8F] text-sm focus:border-[#494949] outline-none"
+                className="h-10 px-3 bg-[#191919] border border-[#232323] rounded-[14px] text-[#8F8F8F] text-sm"
               >
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.id}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id}
                   </option>
                 ))}
               </select>
             </div>
 
+            {/* API Key Selector */}
             <div className="flex items-center gap-2">
               <label className="text-[#C1C1C1] text-sm">API Key:</label>
               <select
                 value={selectedApiKey}
                 onChange={(e) => setSelectedApiKey(e.target.value)}
-                className="h-10 px-3 bg-[#191919] border border-[#232323] rounded-[14px] text-[#8F8F8F] text-sm focus:border-[#494949] outline-none max-w-[180px]"
+                className="h-10 px-3 bg-[#191919] border border-[#232323] rounded-[14px] text-[#8F8F8F] text-sm max-w-[180px]"
               >
                 {apiKeys.length > 0 ? (
-                  apiKeys.map((key) => (
-                    <option key={key.id} value={key.api_key}>
-                      {key.api_name}
+                  apiKeys.map((k) => (
+                    <option key={k.id} value={k.api_key}>
+                      {k.api_name}
                     </option>
                   ))
                 ) : (
@@ -206,6 +233,7 @@ const handleSendMessage = async () => {
               </select>
             </div>
 
+            {/* Clear Button */}
             <button
               onClick={handleClear}
               className="flex items-center gap-2 border border-[#232323] px-4 py-2 rounded-[14px] hover:bg-[#191919] transition"
