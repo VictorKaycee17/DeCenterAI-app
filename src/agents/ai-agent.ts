@@ -21,28 +21,20 @@ class OpenRouterAdapter {
   private client: OpenAI;
 
   constructor(apiKey?: string, baseURL?: string) {
-    const key =
-      apiKey ||
-      process.env.UNREAL_API_KEY ||
-      process.env.OPENROUTER_API_KEY ||
-      process.env.OPENAI_API_KEY;
-    if (!key) throw new Error("Missing API key: set UNREAL_API_KEY or OPENROUTER_API_KEY");
+    const key = apiKey || process.env.UNREAL_API_KEY || process.env.OPENAI_API_KEY;
+    if (!key) throw new Error("Missing API key: set UNREAL_API_KEY or OPENAI_API_KEY");
 
-    const base =
-      baseURL ||
-      process.env.UNREAL_API_URL ||
-      process.env.OPENROUTER_BASE ||
-      process.env.OPENAI_BASE_URL ||
-      "https://api.openai.com/v1"; // Default fallback
+    const base = baseURL || process.env.UNREAL_API_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1/chat/completions";
 
-    console.log(`🔗 Initializing OpenAI client with baseURL: ${base}`);
-    console.log(`🔑 API key present: ${!!key} (length: ${key?.length || 0})`);
+    console.log(`🔧 Initializing OpenAI client:`);
+    console.log(`   Base URL: ${base}`);
+    console.log(`   API Key: ${key.substring(0, 10)}...`);
 
     this.client = new OpenAI({ 
       apiKey: key, 
       baseURL: base,
-      timeout: 60000, // 60 second timeout
-      maxRetries: 2, // Retry failed requests twice
+      timeout: 30000, // 30 second timeout
+      maxRetries: 2
     });
   }
 
@@ -55,57 +47,57 @@ class OpenRouterAdapter {
       const params: any = {
         model,
         messages,
-        timeout: 60000, // 60 second timeout
       };
 
       // Add tool definitions if provided
       if (tools && tools.length > 0) {
         console.log(`🔧 Sending ${tools.length} tools to API`);
-        params.tools = tools.map(t => ({
-          type: "function",
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters || {
-              type: "object",
-              properties: {},
-              required: []
+        const formattedTools = tools
+          .filter((t): t is any => t.type !== 'custom')
+          .map(t => ({
+            type: "function" as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters || {
+                type: "object",
+                properties: {},
+                required: []
+              }
             }
-          }
-        }));
+          }));
+        params.tools = formattedTools;
         params.tool_choice = "auto";
-        
-        // Debug: show what we're sending
-        console.log(`📤 API params:`, JSON.stringify(params, null, 2));
       }
 
-      console.log(`🌐 Calling OpenAI API (model: ${model}, timeout: 60s)...`);
+      console.log(`🌐 Calling OpenAI API (model: ${model})...`);
+      console.log(`📍 Base URL: ${this.client.baseURL}`);
+      console.log(`🔑 Has API key: ${!!this.client.apiKey}`);
       
-      // Create a timeout promise
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("API request timeout after 60 seconds")), 60000);
-      });
+      // Test with a simple request first
+      const testParams = {
+        model,
+        messages: [{ role: "user" as const, content: "Say 'test'" }],
+        max_tokens: 10
+      };
       
-      // Race between the API call and timeout
-      const resp = await Promise.race([
-        this.client.chat.completions.create(params),
-        timeoutPromise
-      ]) as any;
+      console.log(`🧪 Testing basic API call first...`);
+      try {
+        const testResp = await this.client.chat.completions.create(testParams);
+        console.log(`✅ Basic API test successful:`, testResp.choices[0].message.content);
+      } catch (testErr: any) {
+        console.error(`❌ Basic API test failed:`, testErr.message);
+        throw testErr;
+      }
       
+      console.log(`📤 Now making full request with ${messages.length} messages...`);
+      const resp = await this.client.chat.completions.create(params);
       console.log(`✅ Got response from API`);
       return resp;
     } catch (err: any) {
       console.error("[OpenRouterAdapter] request failed:", err?.message ?? err);
-      console.error("[OpenRouterAdapter] full error:", err?.response?.data ?? err);
-      
-      // More detailed error information
-      if (err?.status) {
-        console.error(`[OpenRouterAdapter] HTTP Status: ${err.status}`);
-      }
-      if (err?.code) {
-        console.error(`[OpenRouterAdapter] Error Code: ${err.code}`);
-      }
-      
+      console.error("[OpenRouterAdapter] status:", err?.status);
+      console.error("[OpenRouterAdapter] response:", err?.response?.data);
       throw new Error(err?.message ?? "LLM request failed");
     }
   }
@@ -163,33 +155,30 @@ class OpenRouterChatModel extends BaseChatModel {
     const choice = resp.choices[0];
     const message = choice.message;
 
-    console.log(`📥 Response choice:`, { 
+    console.log(`📥 Response:`, { 
       hasToolCalls: !!message.tool_calls,
+      toolCallsLength: message.tool_calls?.length || 0,
       content: message.content?.substring(0, 100) 
     });
 
     // Check if model wants to call a tool
     if (message.tool_calls && message.tool_calls.length > 0) {
-      console.log(`🔧 Model wants to call tools:`, message.tool_calls.map((tc: any) => {
-        // Type guard check before accessing function property
-        if (tc.type === 'function' && 'function' in tc) {
-          return tc.function.name;
-        }
-        return 'unknown';
-      }));
+      const functionToolCalls = message.tool_calls.filter(
+        (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
+      );
       
-      const formattedToolCalls = message.tool_calls
-        .filter((tc: any): tc is { id: string; type: 'function'; function: { name: string; arguments: string } } => {
-          return tc.type === 'function' && 'function' in tc;
-        })
-        .map((tc: { id: string; type: 'function'; function: { name: string; arguments: string } }) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: {
-            name: tc.function.name,
-            arguments: tc.function.arguments
-          }
-        }));
+      console.log(`🔧 Model wants to call ${functionToolCalls.length} tool(s):`, 
+        functionToolCalls.map(tc => tc.function.name)
+      );
+      
+      const formattedToolCalls = functionToolCalls.map(tc => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments
+        }
+      }));
 
       const generation: ChatGeneration = {
         text: message.content || "",
