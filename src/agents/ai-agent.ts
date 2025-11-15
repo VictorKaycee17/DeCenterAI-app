@@ -12,10 +12,9 @@ import { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import { ChatResult, ChatGeneration } from "@langchain/core/outputs";
 import { allHederaTools } from "../tools/hedera-tools.js";
 import OpenAI from "openai";
-import { zodToJsonSchema } from "zod-to-json-schema";
 
 // -----------------------------
-// OpenAI/OpenRouter Adapter
+// OpenAI/Unreal API Adapter
 // -----------------------------
 class OpenRouterAdapter {
   private client: OpenAI;
@@ -26,14 +25,12 @@ class OpenRouterAdapter {
 
     const base = baseURL || process.env.UNREAL_API_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
-    console.log(`🔧 Initializing OpenAI client:`);
-    console.log(`   Base URL: ${base}`);
-    console.log(`   API Key: ${key.substring(0, 10)}...`);
+    console.log(`🔗 Initializing OpenAI client with baseURL: ${base}`);
 
     this.client = new OpenAI({ 
       apiKey: key, 
       baseURL: base,
-      timeout: 30000, // 30 second timeout
+      timeout: 30000,
       maxRetries: 2
     });
   }
@@ -49,7 +46,6 @@ class OpenRouterAdapter {
         messages
       };
 
-      // Add tool definitions if provided
       if (tools && tools.length > 0) {
         const formattedTools = tools
           .filter((t): t is any => t.type !== 'custom')
@@ -67,6 +63,7 @@ class OpenRouterAdapter {
           }));
         params.tools = formattedTools;
         params.tool_choice = "auto";
+        params.parallel_tool_calls = false; // CRITICAL: Disable parallel tool calls
       }
 
       const resp = await this.client.chat.completions.create(params);
@@ -101,7 +98,6 @@ class OpenRouterChatModel extends BaseChatModel {
     options?: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun
   ): Promise<ChatResult> {
-    // Convert LangChain messages to OpenAI format
     const formattedMessages = messages.map((msg) => {
       const msgType = msg._getType();
       let role: "system" | "user" | "assistant" = "user";
@@ -116,7 +112,6 @@ class OpenRouterChatModel extends BaseChatModel {
       };
     });
 
-    // Call the API with tools if bound
     const resp = await this.adapter.chat(
       formattedMessages, 
       this.modelName,
@@ -126,22 +121,25 @@ class OpenRouterChatModel extends BaseChatModel {
     const choice = resp.choices[0];
     const message = choice.message;
 
-    // Check if model wants to call a tool
     if (message.tool_calls && message.tool_calls.length > 0) {
       const functionToolCalls = message.tool_calls.filter(
         (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
       );
       
-      console.log(`🔧 Calling tool(s):`, functionToolCalls.map(tc => tc.function.name).join(', '));
+      console.log(`🔧 Model requesting ${functionToolCalls.length} tool call(s):`, 
+        functionToolCalls.map(tc => tc.function.name).join(', '));
       
-      const formattedToolCalls = functionToolCalls.map(tc => ({
-        id: tc.id,
-        type: "function" as const,
-        function: {
-          name: tc.function.name,
-          arguments: tc.function.arguments
-        }
-      }));
+      const formattedToolCalls = functionToolCalls.map(tc => {
+        console.log(`  📞 ${tc.function.name}(${tc.function.arguments})`);
+        return {
+          id: tc.id,
+          type: "function" as const,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments
+          }
+        };
+      });
 
       const generation: ChatGeneration = {
         text: message.content || "",
@@ -158,9 +156,7 @@ class OpenRouterChatModel extends BaseChatModel {
       };
     }
 
-    // Regular text response
     const text = message.content || "No response";
-    
     const generation: ChatGeneration = {
       text,
       message: new AIMsg(text),
@@ -171,7 +167,6 @@ class OpenRouterChatModel extends BaseChatModel {
     };
   }
 
-  // Store tools for use in _generate
   bindTools(tools: any[]): this {
     const newInstance = new OpenRouterChatModel(this.modelName);
     newInstance.boundTools = tools.map(tool => {
@@ -180,33 +175,25 @@ class OpenRouterChatModel extends BaseChatModel {
       try {
         const rawSchema = tool.schema as any;
         
-        // Check if schema has the _def.shape structure (Zod object)
         if (rawSchema?._def?.shape) {
-          // Manually build JSON Schema from Zod shape
           const properties: any = {};
           const required: string[] = [];
           
           Object.entries(rawSchema._def.shape).forEach(([key, value]: [string, any]) => {
-            let propSchema: any = { type: "string" }; // default
-            
-            // Check various Zod type patterns
             const typeName = value._def?.typeName || value.constructor?.name;
+            let propSchema: any = { type: "string" };
             
-            // Handle ZodDefault wrapper
             if (typeName === "ZodDefault" || value._def?.defaultValue !== undefined) {
               const innerType = value._def?.innerType || value;
               propSchema = { type: "string" };
               if (value._def?.defaultValue !== undefined) {
                 propSchema.default = value._def.defaultValue;
               }
-              // Optional parameters (with default) are not required
             } else {
-              // Required parameter
               propSchema = { type: "string" };
               required.push(key);
             }
             
-            // Add description - check multiple possible locations
             const desc = value._def?.description || 
                         value.description || 
                         value._def?.innerType?._def?.description;
@@ -270,23 +257,44 @@ const agent = createReactAgent({
 });
 
 // -----------------------------
-// Conversation memory
+// Session management
 // -----------------------------
-const conversationHistory: Array<SystemMessage | HumanMessage | AIMessage> = [
-  new SystemMessage(
-    "You are DeCenterAI, an AI assistant with access to Hedera blockchain tools.\n\n" +
-    "Available tools:\n" +
-    "- CMD_HCS_CREATE_TOPIC: Creates a new Hedera Consensus Service topic. Returns {txId, topicId}.\n" +
-    "- CMD_HCS_SUBMIT_TOPIC_MESSAGE: Submits a message to an existing topic. Returns {txId, topicSequenceNumber}.\n\n" +
-    "IMPORTANT INSTRUCTIONS:\n" +
-    "1. When a user asks to create a topic, call CMD_HCS_CREATE_TOPIC ONCE with an appropriate memo.\n" +
-    "2. When you receive a tool result with txId and topicId, immediately respond to the user with those details. DO NOT call the tool again.\n" +
-    "3. When a user asks to submit a message, call CMD_HCS_SUBMIT_TOPIC_MESSAGE ONCE.\n" +
-    "4. After receiving a successful tool result, ALWAYS provide a human-readable response summarizing what was done.\n" +
-    "5. NEVER call the same tool multiple times for a single request.\n" +
-    "6. If you see a tool result in the conversation, acknowledge it and respond to the user - don't call more tools."
-  ),
-];
+const sessionHistories = new Map<string, Array<SystemMessage | HumanMessage | AIMessage>>();
+const sessionTopics = new Map<string, string>();
+
+function getConversationHistory(sessionId: string) {
+  if (!sessionHistories.has(sessionId)) {
+    sessionHistories.set(sessionId, [
+      new SystemMessage(
+        "You are DeCenterAI, a helpful AI assistant with Hedera blockchain integration.\n\n" +
+        "Tools available:\n" +
+        "1. CMD_HCS_CREATE_TOPIC: Creates a topic, returns JSON: {\"txId\": \"...\", \"topicId\": \"0.0.xxxxx\"}\n" +
+        "2. CMD_HCS_SUBMIT_TOPIC_MESSAGE: Submits message to a topic (requires topicId and message)\n\n" +
+        "WORKFLOW:\n" +
+        "- You can ONLY call ONE tool at a time\n" +
+        "- When user sends a message:\n" +
+        "  1. If no topic exists: Create one with CMD_HCS_CREATE_TOPIC\n" +
+        "  2. Submit the message with CMD_HCS_SUBMIT_TOPIC_MESSAGE\n" +
+        "  3. THEN answer the user's question naturally and helpfully\n" +
+        "- You are a conversational assistant - engage with users, answer their questions, and be helpful\n" +
+        "- The Hedera submission is just for record-keeping; your main job is to assist the user\n\n" +
+        "Example:\n" +
+        "User: 'What's 2+2?'\n" +
+        "You: [submit to Hedera] then respond: 'I've recorded your message. The answer is 4!'"
+      ),
+    ]);
+  }
+  return sessionHistories.get(sessionId)!;
+}
+
+function getSessionTopic(sessionId: string): string | null {
+  return sessionTopics.get(sessionId) || null;
+}
+
+function setSessionTopic(sessionId: string, topicId: string) {
+  sessionTopics.set(sessionId, topicId);
+  console.log(`💾 Saved topic ${topicId} for session ${sessionId}`);
+}
 
 // -----------------------------
 // runAgent helper
@@ -296,23 +304,83 @@ export async function runAgent(opts: {
   hcsTopicRequest?: string;
   hcsSubmitMessage?: string;
   model?: string;
+  sessionId?: string;
+  autoCreateTopic?: boolean;
 }) {
-  const { playgroundPrompt, hcsTopicRequest, hcsSubmitMessage, model } = opts ?? {};
+  const { 
+    playgroundPrompt, 
+    hcsTopicRequest, 
+    hcsSubmitMessage, 
+    model, 
+    sessionId = "default",
+    autoCreateTopic = true
+  } = opts ?? {};
+  
   const userMessageText = playgroundPrompt ?? hcsTopicRequest ?? hcsSubmitMessage ?? "No input.";
 
-  conversationHistory.push(new HumanMessage(userMessageText));
+  const conversationHistory = getConversationHistory(sessionId);
+  const existingTopic = getSessionTopic(sessionId);
+
+  // Add context message only once at the start
+  if (autoCreateTopic && !existingTopic) {
+    console.log(`📝 No topic for session ${sessionId}, will create automatically`);
+    conversationHistory.push(new HumanMessage(
+      `[SYSTEM CONTEXT: No topic exists yet. First use CMD_HCS_CREATE_TOPIC with memo="Auto-created for session ${sessionId}", ` +
+      `then use CMD_HCS_SUBMIT_TOPIC_MESSAGE with the user's message below.]\n\n` +
+      `User message: ${userMessageText}`
+    ));
+  } else if (existingTopic) {
+    console.log(`📋 Using topic ${existingTopic} for session ${sessionId}`);
+    conversationHistory.push(new HumanMessage(
+      `[SYSTEM CONTEXT: Use existing topic ${existingTopic}. Call CMD_HCS_SUBMIT_TOPIC_MESSAGE with topicId="${existingTopic}"]\n\n` +
+      `User message: ${userMessageText}`
+    ));
+  } else {
+    conversationHistory.push(new HumanMessage(userMessageText));
+  }
 
   const payload = { 
     messages: conversationHistory as unknown as LangchainMessage[],
-    recursionLimit: 10 // Limit iterations to prevent infinite loops
   } as any;
   if (model) payload.model = model;
 
   try {
-    const response: any = await agent.invoke(payload, { configurable: { thread_id: "DECENTERAI-THREAD" } });
+    const response: any = await agent.invoke(payload, { 
+      configurable: { thread_id: `DECENTERAI-${sessionId}` },
+      recursionLimit: 10 // Limit iterations to prevent infinite loops
+    });
 
+    console.log("\n📦 Agent response summary:");
+    console.log(`  Messages: ${response?.messages?.length || 0}`);
+    
     const lastMsg = response?.messages?.[response.messages.length - 1];
-    const replyText = lastMsg?.content ?? lastMsg?.text ?? (response?.generations?.[0]?.[0]?.text ?? "No response.");
+    const replyText = lastMsg?.content ?? lastMsg?.text ?? "Task completed. Check logs for details.";
+
+    // Extract and save topicId if this was a new topic
+    if (!existingTopic && response?.messages) {
+      for (const msg of response.messages) {
+        if (msg._getType && msg._getType() === 'tool') {
+          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+          
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed.topicId) {
+              setSessionTopic(sessionId, parsed.topicId);
+              console.log(`✅ Topic created: ${parsed.topicId}`);
+              break;
+            }
+          } catch (e) {
+            // Try regex fallback
+            const match = content.match(/"topicId"\s*:\s*"(0\.0\.\d+)"/);
+            if (match) {
+              setSessionTopic(sessionId, match[1]);
+              console.log(`✅ Topic created: ${match[1]}`);
+              break;
+            }
+          }
+        }
+      }
+    }
 
     conversationHistory.push(new AIMessage(replyText));
 
@@ -320,10 +388,8 @@ export async function runAgent(opts: {
   } catch (err: any) {
     console.error("❌ Error in runAgent:", err.message);
     
-    // If recursion limit hit, return the last successful result
-    if (err.message?.includes('Recursion limit')) {
-      console.log("⚠️  Recursion limit reached - returning partial results");
-      return "Task completed (recursion limit reached). Check the transaction IDs above for results.";
+    if (err.message?.includes('Recursion limit') || err.message?.includes('maximum iterations')) {
+      return "I completed the task but hit the iteration limit. The topic and message should be created. Check the logs above for transaction IDs.";
     }
     
     throw err;
@@ -333,23 +399,52 @@ export async function runAgent(opts: {
 // -----------------------------
 // CLI interactive mode
 // -----------------------------
-if (process.argv[1]?.endsWith("/ai-agent.ts") || process.argv[1]?.endsWith("\\ai-agent.ts")) {
+const isRunningDirectly = process.argv[1]?.includes('ai-agent');
+
+if (isRunningDirectly) {
   (async () => {
-    console.log("🤖 DeCenterAI CLI — type a prompt (Ctrl+C to exit)\n");
+    console.log("🤖 DeCenterAI CLI — type a prompt (Ctrl+C to exit)");
+    console.log("💡 Commands: 'topic' (show current topic), 'clear' (new session), 'exit'\n");
 
     const rl = await import("node:readline/promises");
     const r = rl.createInterface({ input: process.stdin, output: process.stdout });
 
+    const cliSessionId = "cli-" + Date.now();
+
     while (true) {
       const prompt = await r.question("> ");
       if (!prompt.trim()) continue;
+      
+      if (prompt.toLowerCase() === "clear") {
+        sessionHistories.delete(cliSessionId);
+        sessionTopics.delete(cliSessionId);
+        console.log("🗑️  Session cleared\n");
+        continue;
+      }
+      
+      if (prompt.toLowerCase() === "topic") {
+        const topic = getSessionTopic(cliSessionId);
+        console.log(topic ? `📋 Current topic: ${topic}\n` : "❌ No topic yet\n");
+        continue;
+      }
+      
+      if (prompt.toLowerCase() === "exit" || prompt.toLowerCase() === "quit") {
+        console.log("👋 Goodbye!");
+        process.exit(0);
+      }
+      
       try {
-        const reply = await runAgent({ playgroundPrompt: prompt });
+        const reply = await runAgent({ 
+          playgroundPrompt: prompt, 
+          sessionId: cliSessionId,
+          autoCreateTopic: true 
+        });
         console.log("\n🧠 AI:", reply, "\n");
       } catch (err: any) {
         console.error("❌ Agent error:", err?.message ?? err);
-        console.error("Stack:", err?.stack);
       }
     }
   })();
 }
+
+export { OpenRouterChatModel, OpenRouterAdapter, getSessionTopic, setSessionTopic };

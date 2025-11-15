@@ -18,14 +18,18 @@ export default function DashboardPage() {
   const [apiKeysCount, setApiKeysCount] = useState<number>(0);
   const [totalInferences, setTotalInferences] = useState<number>(0);
   const [networkStatus, setNetworkStatus] = useState<string>("loading...");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const chainConfig = getChainConfigById(activeChain.id);
-  const unrealTokenAddress = chainConfig?.custom?.tokens?.UnrealToken?.address;
+  const unrealTokenAddress = chainConfig?.custom?.tokens && 'UnrealToken' in chainConfig.custom.tokens
+    ? chainConfig.custom.tokens.UnrealToken?.address
+    : undefined;
 
-  // Fetch Unreal token balance
+  // Fetch Unreal token balance (from Somnia testnet)
   const getUnrealTokenBalance = async () => {
     if (!wallet) return;
     try {
+      setIsRefreshing(true);
       const balance = await fetchTokenBalance(
         wallet,
         activeChain,
@@ -35,7 +39,9 @@ export default function DashboardPage() {
       setUnrealBalance(balance.displayValue);
     } catch (err) {
       console.error("Error fetching Unreal balance:", err);
-      toast.error("Failed to fetch Unreal token balance");
+      // Don't show error toast on automatic refresh to avoid spamming user
+    } finally {
+      setIsRefreshing(false);
     }
   };
   // Fetch API key summary (count + inferences)
@@ -65,8 +71,19 @@ export default function DashboardPage() {
     }
   };
 
+  // Initial load and real-time polling for balance updates
   useEffect(() => {
+    if (!wallet) return;
+
+    // Initial fetch
     getUnrealTokenBalance();
+
+    // Poll every 10 seconds for real-time balance updates
+    const balanceInterval = setInterval(() => {
+      getUnrealTokenBalance();
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(balanceInterval);
   }, [wallet]);
 
   useEffect(() => {
@@ -86,14 +103,9 @@ export default function DashboardPage() {
         <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
           <StatCard
             title="Credits Balance"
-            value={`${unrealBalance || 0} Credits`}
-            icon={<CloudArrowDown size={42} className="text-[#5D5D5D]" />}
-            details={[
-              {
-                label: "",
-                value: "",
-              },
-            ]}
+            value={`${unrealBalance || 0} ${parseFloat(unrealBalance.toString()) === 1 ? 'Credit' : 'Credits'}`}
+            icon={<CloudArrowDown size={42} className={`${isRefreshing ? 'animate-pulse' : ''} text-[#5D5D5D]`} />}
+            details={[]}
           />
 
           <StatCard

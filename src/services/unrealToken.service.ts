@@ -14,16 +14,28 @@ const account = privateKeyToAccount({
 
 export async function sendWelcomeTokens(toWallet: string, amount: number) {
   try {
+    // Get the Unreal token contract address with type guard
+    const unrealTokenAddress = activeChainConfig.custom.tokens && 'UnrealToken' in activeChainConfig.custom.tokens
+      ? activeChainConfig.custom.tokens.UnrealToken?.address
+      : undefined;
+
+    const unrealTokenDecimals = activeChainConfig.custom.tokens && 'UnrealToken' in activeChainConfig.custom.tokens
+      ? activeChainConfig.custom.tokens.UnrealToken?.decimals
+      : 18; // Default to 18 decimals if not found
+
+    if (!unrealTokenAddress) {
+      throw new Error("UnrealToken not configured for this chain");
+    }
+
     // Get the Unreal token contract (ERC20)
     const contract = getContract({
       client,
       chain: activeChain,
-      address: activeChainConfig.custom.tokens.UnrealToken.address,
+      address: unrealTokenAddress,
     });
 
     // ERC20 usually has 18 decimals → convert to base units
-    const decimals = activeChainConfig.custom.tokens.UnrealToken.decimals;
-    const value = BigInt(amount) * BigInt(10 ** decimals);
+    const value = BigInt(amount) * BigInt(10 ** unrealTokenDecimals);
 
     // Prepare transfer
     const tx = prepareContractCall({

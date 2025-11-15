@@ -29,7 +29,9 @@ const checkUnrealBalance = async (
   // Resolve chain metadata & Unreal token address from configuration
   const chain = getChainById(chainId);
   const chainConfig = getChainConfigById(chainId);
-  const unrealTokenAddress = chainConfig?.custom?.tokens?.UnrealToken?.address;
+  const unrealTokenAddress = chainConfig?.custom?.tokens && 'UnrealToken' in chainConfig.custom.tokens
+    ? chainConfig.custom.tokens.UnrealToken?.address
+    : undefined;
 
   if (!chain || !unrealTokenAddress)
     throw new Error("Invalid chain configuration");
