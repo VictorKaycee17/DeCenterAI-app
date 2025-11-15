@@ -51,6 +51,7 @@ export interface UnrealVerifyTokenResponse {
 
 export interface ApiKeyError {
   error: string;
+  code?: number;
 }
 
 export interface GetAllApiKeysResponse {

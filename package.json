@@ -1,6 +1,7 @@
 {
   "name": "decenter-ai-app",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,27 +11,43 @@
   },
   "dependencies": {
     "@hashgraph/sdk": "^2.76.0",
+    "@langchain/anthropic": "^1.0.1",
+    "@langchain/community": "^1.0.0",
+    "@langchain/core": "^1.0.5",
+    "@langchain/langgraph": "^1.0.2",
+    "@langchain/openai": "^1.1.1",
     "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "^2.75.1",
+    "@thirdweb-dev/react": "^4.9.4",
     "@thirdweb-dev/sdk": "^4.0.99",
     "@vercel/analytics": "^1.5.0",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
     "framer-motion": "^12.23.24",
+    "langchain": "^1.0.3",
     "next": "15.5.6",
+    "node-fetch": "^3.3.2",
+    "openai": "^6.8.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-toastify": "^11.0.5",
     "thirdweb": "^5.109.0",
+    "zod": "^4.1.12",
+    "zod-to-json-schema": "^3.24.6",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/node-fetch": "^2.6.13",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/react-toastify": "^4.1.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.6",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }
