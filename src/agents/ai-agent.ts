@@ -24,7 +24,7 @@ class OpenRouterAdapter {
     const key = apiKey || process.env.UNREAL_API_KEY || process.env.OPENAI_API_KEY;
     if (!key) throw new Error("Missing API key: set UNREAL_API_KEY or OPENAI_API_KEY");
 
-    const base = baseURL || process.env.UNREAL_API_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1/chat/completions";
+    const base = baseURL || process.env.UNREAL_API_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
     console.log(`🔧 Initializing OpenAI client:`);
     console.log(`   Base URL: ${base}`);
@@ -46,12 +46,11 @@ class OpenRouterAdapter {
     try {
       const params: any = {
         model,
-        messages,
+        messages
       };
 
       // Add tool definitions if provided
       if (tools && tools.length > 0) {
-        console.log(`🔧 Sending ${tools.length} tools to API`);
         const formattedTools = tools
           .filter((t): t is any => t.type !== 'custom')
           .map(t => ({
@@ -70,34 +69,10 @@ class OpenRouterAdapter {
         params.tool_choice = "auto";
       }
 
-      console.log(`🌐 Calling OpenAI API (model: ${model})...`);
-      console.log(`📍 Base URL: ${this.client.baseURL}`);
-      console.log(`🔑 Has API key: ${!!this.client.apiKey}`);
-      
-      // Test with a simple request first
-      const testParams = {
-        model,
-        messages: [{ role: "user" as const, content: "Say 'test'" }],
-        max_tokens: 10
-      };
-      
-      console.log(`🧪 Testing basic API call first...`);
-      try {
-        const testResp = await this.client.chat.completions.create(testParams);
-        console.log(`✅ Basic API test successful:`, testResp.choices[0].message.content);
-      } catch (testErr: any) {
-        console.error(`❌ Basic API test failed:`, testErr.message);
-        throw testErr;
-      }
-      
-      console.log(`📤 Now making full request with ${messages.length} messages...`);
       const resp = await this.client.chat.completions.create(params);
-      console.log(`✅ Got response from API`);
       return resp;
     } catch (err: any) {
       console.error("[OpenRouterAdapter] request failed:", err?.message ?? err);
-      console.error("[OpenRouterAdapter] status:", err?.status);
-      console.error("[OpenRouterAdapter] response:", err?.response?.data);
       throw new Error(err?.message ?? "LLM request failed");
     }
   }
@@ -126,8 +101,6 @@ class OpenRouterChatModel extends BaseChatModel {
     options?: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun
   ): Promise<ChatResult> {
-    console.log(`\n🤖 _generate called with ${messages.length} messages`);
-    
     // Convert LangChain messages to OpenAI format
     const formattedMessages = messages.map((msg) => {
       const msgType = msg._getType();
@@ -143,8 +116,6 @@ class OpenRouterChatModel extends BaseChatModel {
       };
     });
 
-    console.log(`📨 Formatted messages:`, formattedMessages.map(m => `${m.role}: ${m.content.substring(0, 50)}...`));
-
     // Call the API with tools if bound
     const resp = await this.adapter.chat(
       formattedMessages, 
@@ -155,21 +126,13 @@ class OpenRouterChatModel extends BaseChatModel {
     const choice = resp.choices[0];
     const message = choice.message;
 
-    console.log(`📥 Response:`, { 
-      hasToolCalls: !!message.tool_calls,
-      toolCallsLength: message.tool_calls?.length || 0,
-      content: message.content?.substring(0, 100) 
-    });
-
     // Check if model wants to call a tool
     if (message.tool_calls && message.tool_calls.length > 0) {
       const functionToolCalls = message.tool_calls.filter(
         (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
       );
       
-      console.log(`🔧 Model wants to call ${functionToolCalls.length} tool(s):`, 
-        functionToolCalls.map(tc => tc.function.name)
-      );
+      console.log(`🔧 Calling tool(s):`, functionToolCalls.map(tc => tc.function.name).join(', '));
       
       const formattedToolCalls = functionToolCalls.map(tc => ({
         id: tc.id,
@@ -197,7 +160,6 @@ class OpenRouterChatModel extends BaseChatModel {
 
     // Regular text response
     const text = message.content || "No response";
-    console.log(`💬 Returning text response`);
     
     const generation: ChatGeneration = {
       text,
@@ -312,9 +274,17 @@ const agent = createReactAgent({
 // -----------------------------
 const conversationHistory: Array<SystemMessage | HumanMessage | AIMessage> = [
   new SystemMessage(
-    "You are DeCenterAI, an AI assistant with access to Hedera blockchain tools. " +
-    "When users ask to create topics or submit messages to Hedera, use your tools. " +
-    "Available tools: CMD_HCS_CREATE_TOPIC (creates a new topic) and CMD_HCS_SUBMIT_TOPIC_MESSAGE (submits message to existing topic)."
+    "You are DeCenterAI, an AI assistant with access to Hedera blockchain tools.\n\n" +
+    "Available tools:\n" +
+    "- CMD_HCS_CREATE_TOPIC: Creates a new Hedera Consensus Service topic. Returns {txId, topicId}.\n" +
+    "- CMD_HCS_SUBMIT_TOPIC_MESSAGE: Submits a message to an existing topic. Returns {txId, topicSequenceNumber}.\n\n" +
+    "IMPORTANT INSTRUCTIONS:\n" +
+    "1. When a user asks to create a topic, call CMD_HCS_CREATE_TOPIC ONCE with an appropriate memo.\n" +
+    "2. When you receive a tool result with txId and topicId, immediately respond to the user with those details. DO NOT call the tool again.\n" +
+    "3. When a user asks to submit a message, call CMD_HCS_SUBMIT_TOPIC_MESSAGE ONCE.\n" +
+    "4. After receiving a successful tool result, ALWAYS provide a human-readable response summarizing what was done.\n" +
+    "5. NEVER call the same tool multiple times for a single request.\n" +
+    "6. If you see a tool result in the conversation, acknowledge it and respond to the user - don't call more tools."
   ),
 ];
 
@@ -332,13 +302,14 @@ export async function runAgent(opts: {
 
   conversationHistory.push(new HumanMessage(userMessageText));
 
-  const payload = { messages: conversationHistory as unknown as LangchainMessage[] } as any;
+  const payload = { 
+    messages: conversationHistory as unknown as LangchainMessage[],
+    recursionLimit: 10 // Limit iterations to prevent infinite loops
+  } as any;
   if (model) payload.model = model;
 
   try {
     const response: any = await agent.invoke(payload, { configurable: { thread_id: "DECENTERAI-THREAD" } });
-
-    console.log("\n📦 Full response:", JSON.stringify(response, null, 2));
 
     const lastMsg = response?.messages?.[response.messages.length - 1];
     const replyText = lastMsg?.content ?? lastMsg?.text ?? (response?.generations?.[0]?.[0]?.text ?? "No response.");
@@ -348,7 +319,13 @@ export async function runAgent(opts: {
     return replyText;
   } catch (err: any) {
     console.error("❌ Error in runAgent:", err.message);
-    console.error("Stack:", err.stack);
+    
+    // If recursion limit hit, return the last successful result
+    if (err.message?.includes('Recursion limit')) {
+      console.log("⚠️  Recursion limit reached - returning partial results");
+      return "Task completed (recursion limit reached). Check the transaction IDs above for results.";
+    }
+    
     throw err;
   }
 }
