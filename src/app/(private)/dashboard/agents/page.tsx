@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  createUnrealApiKey,
-  deleteApiKey,
-} from "@/actions/unreal/api"; // ✅ keep only these two
+import { createUnrealApiKey, deleteApiKey } from "@/actions/unreal/api"; // ✅ keep only these two
 import { getUserByWallet } from "@/actions/supabase/users";
 import {
   getApiKeysByUser,
@@ -60,7 +57,7 @@ export default function AgentsPage() {
       toast.error(
         error instanceof Error
           ? error.message
-          : "An error occurred while syncing API keys"
+          : "An error occurred while syncing API keys",
       );
     } finally {
       setLoading(false);
@@ -82,7 +79,7 @@ export default function AgentsPage() {
       await fetchAndSyncApiKeys();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to generate API key"
+        err instanceof Error ? err.message : "Failed to generate API key",
       );
     }
   };
@@ -104,13 +101,13 @@ export default function AgentsPage() {
       await fetchAndSyncApiKeys();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to revoke API key"
+        err instanceof Error ? err.message : "Failed to revoke API key",
       );
     }
   };
 
   const filteredApiKeys = apiKeys.filter((k) =>
-    k.api_name?.toLowerCase().includes(filter.toLowerCase())
+    k.api_name?.toLowerCase().includes(filter.toLowerCase()),
   );
 
   useEffect(() => {

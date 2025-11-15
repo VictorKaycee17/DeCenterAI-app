@@ -17,7 +17,7 @@ type EIP712Domain = {
   name: string;
   version: string;
   chainId: number;
-  verifyingContract: string;
+  verifyingContract: `0x${string}`;
 };
 
 // Type for EIP-712 types
@@ -29,10 +29,10 @@ type EIP712Types = {
 export async function preparePermitPayload(
   account: Account,
   chain: Chain,
-  tokenAddress: string,
+  tokenAddress: `0x${string}`,
   spender: string,
   amount: bigint,
-  deadline: number
+  deadline: number,
 ): Promise<{
   domain: EIP712Domain;
   permitTypes: EIP712Types;
@@ -102,7 +102,7 @@ export async function signPermitPayload(
   account: Account,
   domain: EIP712Domain,
   types: EIP712Types,
-  message: PermitMessage
+  message: PermitMessage,
 ): Promise<string> {
   try {
     // Sign typed data (EIP-712)

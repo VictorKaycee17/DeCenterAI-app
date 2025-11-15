@@ -12,14 +12,14 @@ import { unrealApiUrl } from "../../utils/config.ts";
 // Generate new Unreal API Key
 export const createUnrealApiKey = async (
   userWallet: string,
-  apiName: string
+  apiName: string,
 ) => {
   try {
     console.log(
       "Creating Unreal API key for wallet",
       userWallet,
       "with name",
-      apiName
+      apiName,
     );
 
     if (!userWallet || !apiName) {
@@ -30,7 +30,7 @@ export const createUnrealApiKey = async (
     const userRes = await getUserByWallet(userWallet);
     if (!userRes.success) {
       throw new Error(
-        userRes.message || "Failed to retrieve user from Supabase"
+        userRes.message || "Failed to retrieve user from Supabase",
       );
     }
     const user = userRes.data;
@@ -80,7 +80,7 @@ export const createUnrealApiKey = async (
 
     if (apiKeyError) {
       throw new Error(
-        `Failed to save API key to Supabase: ${apiKeyError.message}`
+        `Failed to save API key to Supabase: ${apiKeyError.message}`,
       );
     }
 
@@ -98,7 +98,7 @@ export const createUnrealApiKey = async (
   } catch (error) {
     console.error(
       "Error creating Unreal API key:",
-      error instanceof Error ? error.message : "Unknown error"
+      error instanceof Error ? error.message : "Unknown error",
     );
     return {
       success: false,
@@ -111,3 +111,78 @@ export const createUnrealApiKey = async (
 };
 
 // Repeat similar relative path changes for getAllUnrealApiKeys and deleteApiKey
+
+// Delete an user own Unreal API key by the key
+export const deleteApiKey = async (key: string, userWallet: string) => {
+  try {
+    console.log("Deleting Unreal API key", key, "for wallet", userWallet);
+
+    if (!key || !userWallet) {
+      throw new Error("API key and user wallet are required");
+    }
+
+    // Step 1: Get user from Supabase by wallet
+    const userRes = await getUserByWallet(userWallet);
+    if (!userRes.success) {
+      throw new Error(
+        userRes.message || "Failed to retrieve user from Supabase",
+      );
+    }
+    const user = userRes.data;
+
+    // Step 2: Get unreal_token from user
+    const unrealToken = user.unreal_token;
+    if (!unrealToken) {
+      throw new Error("No Unreal session token found for the user");
+    }
+
+    // Step 3: Call DELETE /v1/keys/{key}
+    const response = await fetch(`${unrealApiUrl}/v1/keys/${key}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${unrealToken}`,
+        "User-Agent": "DeCenterAIApp/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      const errorData: ApiKeyError = await response.json();
+      throw new Error(errorData.error || "Failed to delete API key");
+    }
+
+    // Step 4: Parse the successful response
+    const data = await response.json();
+    if (!data.deleted) {
+      throw new Error("API key deletion was not confirmed by Unreal API");
+    }
+
+    // Step 5: Delete the API key from Supabase api_keys table
+    const { error: deleteError } = await supabase
+      .from("api_keys")
+      .delete()
+      .eq("api_key", key)
+      .eq("user", user.id);
+
+    if (deleteError) {
+      throw new Error(
+        `Failed to delete API key from Supabase: ${deleteError.message}`,
+      );
+    }
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error(
+      "Error deleting Unreal API key:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while deleting the API key.",
+    };
+  }
+};
