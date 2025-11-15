@@ -1,8 +1,8 @@
 "use server";
 
-import { supabase } from "../../lib/supabase.ts";
+import { supabase } from "@/lib/supabase.ts";
 
-import { ChatHistoryType } from "../../utils/types.ts";
+import { ChatHistoryType } from "@/utils/types.ts";
 
 // Fetch user's chat history from database, default last 5 chat messages
 export const fetchChatHistory = async (

@@ -1,7 +1,7 @@
 "use server";
 
-import { supabase } from "../../lib/supabase.js";
-import type { UnrealApiKey } from "../../utils/types.js";
+import { supabase } from "@/lib/supabase.js";
+import type { UnrealApiKey } from "@/utils/types.js";
 
 // Convert unix timestamp (seconds) to ISO string
 function toIsoStringFromUnix(unix: number | undefined) {
