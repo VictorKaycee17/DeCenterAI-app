@@ -25,7 +25,7 @@ import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { BaseMessage, AIMessage as AIMsg } from "@langchain/core/messages";
 import { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import { ChatResult, ChatGeneration } from "@langchain/core/outputs";
-import { allHederaTools } from "../tools/hedera-tools";
+import { allHederaTools } from "@/tools/hedera-tools";
 import OpenAI from "openai";
 
 // -----------------------------
