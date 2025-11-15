@@ -2,6 +2,21 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// Suppress LangChain deprecation warnings - multiple approaches
+process.env.LANGCHAIN_SUPPRESS_WARNINGS = "true";
+process.env.LANGCHAIN_TRACING_V2 = "false";
+
+// Monkey-patch console.warn to filter out LangChain warnings
+const originalWarn = console.warn;
+console.warn = (...args: any[]) => {
+  const message = args.join(' ');
+  if (message.includes('LangChain packages are available') || 
+      message.includes('Please upgrade your packages')) {
+    return; // Suppress this specific warning
+  }
+  originalWarn.apply(console, args);
+};
+
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
@@ -440,6 +455,11 @@ if (isRunningDirectly) {
           autoCreateTopic: true 
         });
         console.log("\n🧠 AI:", reply, "\n");
+        
+        // Force flush stdout to prevent buffering issues
+        if (process.stdout.write("")) {
+          process.stdout.once('drain', () => {});
+        }
       } catch (err: any) {
         console.error("❌ Agent error:", err?.message ?? err);
       }
