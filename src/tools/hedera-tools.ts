@@ -1,6 +1,6 @@
 // src/tools/hedera-tools.ts
 import { TopicCreateTransaction, TopicMessageSubmitTransaction } from "@hashgraph/sdk";
-import { createInstance } from "../api/hedera-client.js";
+import { createInstance } from "../api/hedera-client";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
