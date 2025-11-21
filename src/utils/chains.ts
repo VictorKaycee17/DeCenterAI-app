@@ -128,13 +128,12 @@ export const hederaTestnetConfig = {
   testnet: true,
   custom: {
     tokens: {
-      // Add your UnrealToken address on Hedera testnet if you have one
-      // UnrealToken: {
-      //   address: "0x..." as const,
-      //   symbol: "UNREAL",
-      //   name: "Unreal Token",
-      //   decimals: 18,
-      // },
+      UnrealToken: {
+        address: "0x67F7e138b3e925d3d205c00B836B2E57148B321A" as const,
+        symbol: "UNREAL",
+        name: "Unreal Token",
+        decimals: 18,
+      },
     },
   },
 };

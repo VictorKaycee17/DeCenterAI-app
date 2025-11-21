@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createThirdwebClient, getContract, prepareContractCall, sendTransaction } from 'thirdweb';
 import { privateKeyToAccount } from 'thirdweb/wallets';
-import { somniaTestnet, somniaTestnetConfig } from '@/utils/chains';
+import { somniaTestnet, somniaTestnetConfig, titanAITestnetConfig , titanAITestnet} from '@/utils/chains';
 import { cookies } from 'next/headers';
 import { getUserByWallet } from '@/actions/supabase/users';
 import { supabase } from '@/lib/supabase';
@@ -10,7 +10,7 @@ const HEDERA_TESTNET_MIRROR = 'https://testnet.mirrornode.hedera.com';
 const USDC_TOKEN_ID = '0.0.429274'; // USDC on Hedera testnet
 
 // Somnia UNREAL token configuration
-const UNREAL_TOKEN_ADDRESS = somniaTestnetConfig.custom.tokens.UnrealToken.address;
+const UNREAL_TOKEN_ADDRESS = titanAITestnetConfig.custom.tokens.UnrealToken.address;
 const TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY;
 const THIRDWEB_CLIENT_ID = process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID;
 
@@ -225,7 +225,7 @@ async function sendUnrealTokens(
         return { success: false, error: 'Treasury wallet not configured' };
     }
 
-    console.log('💎 Sending UNREAL tokens on Somnia:', {
+    console.log('💎 Sending UNREAL tokens on titan ai:', {
         recipient: recipientAddress,
         amount: amount,
         token: UNREAL_TOKEN_ADDRESS,
@@ -241,7 +241,7 @@ async function sendUnrealTokens(
     // Get UNREAL token contract on Somnia (outside retry loop)
     const unrealContract = getContract({
         client,
-        chain: somniaTestnet,
+        chain: titanAITestnet,
         address: UNREAL_TOKEN_ADDRESS,
     });
 
@@ -269,7 +269,7 @@ async function sendUnrealTokens(
             console.log('✅ UNREAL tokens sent successfully:', {
                 attempt,
                 transactionHash: result.transactionHash,
-                explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${result.transactionHash}`
+                explorerUrl: `${titanAITestnetConfig.blockExplorers.default.url}/tx/${result.transactionHash}`
             });
 
             return {
@@ -505,7 +505,7 @@ export async function POST(request: NextRequest) {
             unrealTokens: {
                 amount: parseInt(credits),
                 transactionHash: tokenResult.transactionHash,
-                explorerUrl: `${somniaTestnetConfig.blockExplorers.default.url}/tx/${tokenResult.transactionHash}`
+                explorerUrl: `${titanAITestnetConfig.blockExplorers.default.url}/tx/${tokenResult.transactionHash}`
             },
             creditsToAdd: parseInt(credits)
         });

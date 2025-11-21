@@ -29,7 +29,7 @@ export function ThirdwebConnectButton() {
       connectButton={{ label: "Sign-In" }}
       connectModal={{ showThirdwebBranding: true, size: "wide" }}
       theme={"dark"}
-      chain={somniaTestnet}
+      chain={titanAITestnet}
       supportedTokens={{
         [titanAITestnet.id]: [
           {
@@ -38,27 +38,27 @@ export function ThirdwebConnectButton() {
             symbol: titanAITestnetConfig.custom.tokens.UnrealToken.symbol,
           },
         ],
-        [torusMainnet.id]: [
-          {
-            address: torusMainnetConfig.custom.tokens.UnrealToken.address,
-            name: torusMainnetConfig.custom.tokens.UnrealToken.name,
-            symbol: torusMainnetConfig.custom.tokens.UnrealToken.symbol,
-          },
-        ],
-        [amoyTestnet.id]: [
-          {
-            address: amoyTestnetConfig.custom.tokens.UnrealToken.address,
-            name: amoyTestnetConfig.custom.tokens.UnrealToken.name,
-            symbol: amoyTestnetConfig.custom.tokens.UnrealToken.symbol,
-          },
-        ],
-        [somniaTestnet.id]: [
-          {
-            address: somniaTestnetConfig.custom.tokens.UnrealToken.address,
-            name: somniaTestnetConfig.custom.tokens.UnrealToken.name,
-            symbol: somniaTestnetConfig.custom.tokens.UnrealToken.symbol,
-          },
-        ],
+        // [torusMainnet.id]: [
+        //   {
+        //     address: torusMainnetConfig.custom.tokens.UnrealToken.address,
+        //     name: torusMainnetConfig.custom.tokens.UnrealToken.name,
+        //     symbol: torusMainnetConfig.custom.tokens.UnrealToken.symbol,
+        //   },
+        // ],
+        // [amoyTestnet.id]: [
+        //   {
+        //     address: amoyTestnetConfig.custom.tokens.UnrealToken.address,
+        //     name: amoyTestnetConfig.custom.tokens.UnrealToken.name,
+        //     symbol: amoyTestnetConfig.custom.tokens.UnrealToken.symbol,
+        //   },
+        // ],
+        // [somniaTestnet.id]: [
+        //   {
+        //     address: somniaTestnetConfig.custom.tokens.UnrealToken.address,
+        //     name: somniaTestnetConfig.custom.tokens.UnrealToken.name,
+        //     symbol: somniaTestnetConfig.custom.tokens.UnrealToken.symbol,
+        //   },
+        // ],
       }}
     />
   );

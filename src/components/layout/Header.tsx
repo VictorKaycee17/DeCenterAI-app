@@ -49,21 +49,21 @@ export default function Header() {
         DeCenter AI
       </h1>
       <div className="flex items-center gap-3 justify-end">
-        {/* Current Chain Indicator */}
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[#191919] border border-[#2B2B2B] rounded-lg">
-          <div className={`w-2 h-2 rounded-full animate-pulse ${isTopUpModalOpen ? 'bg-blue-500' : 'bg-green-500'}`}></div>
-          <span className="text-xs text-[#C1C1C1] font-medium">
-            {displayChainConfig?.name}
-          </span>
-          <span className="text-xs text-[#5D5D5D]">
-            (Chain ID: {displayChain.id})
-          </span>
-          {isTopUpModalOpen && (
-            <span className="text-xs text-blue-400 font-medium">
-              • Payment
-            </span>
-          )}
-        </div>
+        {/*/!* Current Chain Indicator *!/*/}
+        {/*<div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[#191919] border border-[#2B2B2B] rounded-lg">*/}
+        {/*  <div className={`w-2 h-2 rounded-full animate-pulse ${isTopUpModalOpen ? 'bg-blue-500' : 'bg-green-500'}`}></div>*/}
+        {/*  <span className="text-xs text-[#C1C1C1] font-medium">*/}
+        {/*    {displayChainConfig?.name}*/}
+        {/*  </span>*/}
+        {/*  <span className="text-xs text-[#5D5D5D]">*/}
+        {/*    (Chain ID: {displayChain.id})*/}
+        {/*  </span>*/}
+        {/*  {isTopUpModalOpen && (*/}
+        {/*    <span className="text-xs text-blue-400 font-medium">*/}
+        {/*      • Payment*/}
+        {/*    </span>*/}
+        {/*  )}*/}
+        {/*</div>*/}
 
         {/* Notification Bell */}
         {/* <button
