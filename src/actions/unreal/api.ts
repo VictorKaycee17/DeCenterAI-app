@@ -1,13 +1,13 @@
 "use server";
 
-import { supabase } from "../../lib/supabase.ts";
-import { getUserByWallet } from "../supabase/users.ts";
+import { supabase } from "../../lib/supabase";
+import { getUserByWallet } from "../supabase/users";
 import {
   ApiKeyError,
   GetAllApiKeysResponse,
   UnrealApiKeyResponse,
-} from "../../utils/types.ts";
-import { unrealApiUrl } from "../../utils/config.ts";
+} from "../../utils/types";
+import { unrealApiUrl } from "../../utils/config";
 
 // Generate new Unreal API Key
 export const createUnrealApiKey = async (

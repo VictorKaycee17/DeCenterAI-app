@@ -1,6 +1,6 @@
 "use server";
 
-import { supabase } from "@/lib/supabase.ts";
+import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 
 interface IUserUnrealToken {
