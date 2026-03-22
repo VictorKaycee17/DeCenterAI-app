@@ -5,21 +5,19 @@
 ![DeCenter AI Logo](https://github.com/DeCenter-AI/.github/assets/131058062/7fceb64d-f875-4d08-b13e-aff561aab234)
 
 
-# DeCenter AI B2B API Platform - Access to 400+ premium AI models and agents for $0.01 USDC.
+# Unified AI Infrastructure for Scalable Consumer Applications
 
 A fast, unified way for businesses to generate API keys and connect to our global network of AI models and agents.
 
 ---
 
 ## 🚀 Overview
-DeCenter AI is a unified AI studio that connects users to thousands of premium AI tools through a Super Agent that intelligently matches every prompt to the most effective model — for just $0.01 per inference.**.
+DeCenter AI is a unified AI studio that connects users to thousands of premium AI tools through a Super Agent that intelligently matches every prompt to the most effective model — for just $0.01 per inference.**. 
 
-The platform provides developers with easy API access to an **AI network of 400+ models and agents**, powered by **Hedera’s Consensus Service (HCS)** for transparent inference tracking and **Hedera Token Service (HTS)** for seamless microtransactions in **HBAR**.
+The platform provides developers with easy API access to an AI network of 400+ models and agents, powered by Hedera’s Consensus Service (HCS) for transparent inference tracking and Hedera Token Service (HTS) for seamless microtransactions in HBAR. DeCenter AI bridges AI & DePIN — combining smart autonomous AI systems with decentralized infrastructure for trust, scalability, and accessibility.**.
 
-DeCenter AI bridges **AI & DePIN** — combining smart autonomous AI systems with decentralized infrastructure for trust, scalability, and accessibility.
 
 ---
-
 
 ## 🧩 Problems We Solve
 
@@ -28,18 +26,6 @@ Today’s AI landscape is fragmented and expensive.
 - **Too Many Options:** Hundreds of apps that do the same thing with minor variations, creating confusion and inefficiency.  
 - **Too Many Payments:** Every tool requires a separate subscription, making AI usage costly and unsustainable.  
 - **Too Much Hassle:** Users switch between multiple platforms just to complete a single task, wasting time and energy.  
-
----
-
-## 💰 Market Opportunity
-
-This fragmentation fuels the massive gap between free and premium AI users.
-
-- **TAM:** $305B AI Market  
-- **SAM:** 1.8B total AI users  
-- **SOM:** 1.7B free AI users (97% use only free versions)  
-
-💭 *What if we could bring the best of AI to the 97%, at near-zero cost?*
 
 ---
 
@@ -199,6 +185,5 @@ Stay up-to-date with the latest developments and news from DeCenter AI:
 
 ## 🚀 Let’s Build the Future of AI—Together
 
-DeCenter AI is creating a **unified, human-centered AI Studio** that democratizes access to specialized tools, abstracts complexity,  
-and empowers the **97% of users** who have been priced out or left behind.
+DeCenter AI bridges AI and DePIN by combining decentralized infrastructure with intelligent AI routing. Our goal is to make AI accessible, affordable, and verifiable for the 97% of users currently priced out of advanced AI systems.
 ![DeCenter AI - Unifying the AI experience](https://github.com/DeCenter-AI/.github/assets/131058062/c39ed1ce-14d8-4f94-8059-6d5f3a633962)
