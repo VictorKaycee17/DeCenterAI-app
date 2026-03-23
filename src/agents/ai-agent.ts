@@ -9,10 +9,12 @@ process.env.LANGCHAIN_TRACING_V2 = "false";
 // Monkey-patch console.warn to filter out LangChain warnings
 const originalWarn = console.warn;
 console.warn = (...args: any[]) => {
-  const message = args.join(' ');
-  if (message.includes('LangChain packages are available') || 
-      message.includes('Please upgrade your packages')) {
-    return; // Suppress this specific warning
+  const message = args.join(" ");
+  if (
+    message.includes("LangChain packages are available") ||
+    message.includes("Please upgrade your packages")
+  ) {
+    return;
   }
   originalWarn.apply(console, args);
 };
@@ -38,15 +40,19 @@ class OpenRouterAdapter {
     const key = apiKey || process.env.UNREAL_API_KEY || process.env.OPENAI_API_KEY;
     if (!key) throw new Error("Missing API key: set UNREAL_API_KEY or OPENAI_API_KEY");
 
-    const base = baseURL || process.env.UNREAL_API_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    const base =
+      baseURL ||
+      process.env.UNREAL_API_URL ||
+      process.env.OPENAI_BASE_URL ||
+      "https://api.openai.com/v1";
 
     console.log(`🔗 Initializing OpenAI client with baseURL: ${base}`);
 
-    this.client = new OpenAI({ 
-      apiKey: key, 
+    this.client = new OpenAI({
+      apiKey: key,
       baseURL: base,
       timeout: 30000,
-      maxRetries: 2
+      maxRetries: 2,
     });
   }
 
@@ -58,13 +64,13 @@ class OpenRouterAdapter {
     try {
       const params: any = {
         model,
-        messages
+        messages,
       };
 
       if (tools && tools.length > 0) {
         const formattedTools = tools
-          .filter((t): t is any => t.type !== 'custom')
-          .map(t => ({
+          .filter((t): t is any => t.type !== "custom")
+          .map((t) => ({
             type: "function" as const,
             function: {
               name: t.name,
@@ -72,9 +78,9 @@ class OpenRouterAdapter {
               parameters: t.parameters || {
                 type: "object",
                 properties: {},
-                required: []
-              }
-            }
+                required: [],
+              },
+            },
           }));
         params.tools = formattedTools;
         params.tool_choice = "auto";
@@ -94,14 +100,23 @@ class OpenRouterAdapter {
 // Custom LangChain Chat Model
 // -----------------------------
 class OpenRouterChatModel extends BaseChatModel {
-  private adapter: OpenRouterAdapter;
+  // ✅ FIX: adapter is lazily initialized to avoid crashing at build time
+  private _adapter: OpenRouterAdapter | null = null;
   modelName: string;
   private boundTools: any[] = [];
 
   constructor(modelName = "gpt-4o-mini") {
     super({});
-    this.adapter = new OpenRouterAdapter();
     this.modelName = modelName;
+    // ✅ Do NOT instantiate OpenRouterAdapter here — deferred to first use
+  }
+
+  // ✅ Lazy getter — only creates the adapter when a real request comes in
+  private getAdapter(): OpenRouterAdapter {
+    if (!this._adapter) {
+      this._adapter = new OpenRouterAdapter();
+    }
+    return this._adapter;
   }
 
   _llmType(): string {
@@ -116,19 +131,21 @@ class OpenRouterChatModel extends BaseChatModel {
     const formattedMessages = messages.map((msg) => {
       const msgType = msg._getType();
       let role: "system" | "user" | "assistant" = "user";
-      
+
       if (msgType === "system") role = "system";
       else if (msgType === "ai") role = "assistant";
       else if (msgType === "human") role = "user";
 
       return {
         role,
-        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+        content:
+          typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
       };
     });
 
-    const resp = await this.adapter.chat(
-      formattedMessages, 
+    // ✅ Use lazy adapter getter
+    const resp = await this.getAdapter().chat(
+      formattedMessages,
       this.modelName,
       this.boundTools.length > 0 ? this.boundTools : undefined
     );
@@ -138,21 +155,23 @@ class OpenRouterChatModel extends BaseChatModel {
 
     if (message.tool_calls && message.tool_calls.length > 0) {
       const functionToolCalls = message.tool_calls.filter(
-        (tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function'
+        (tc): tc is Extract<typeof tc, { type: "function" }> => tc.type === "function"
       );
-      
-      console.log(`🔧 Model requesting ${functionToolCalls.length} tool call(s):`, 
-        functionToolCalls.map(tc => tc.function.name).join(', '));
-      
-      const formattedToolCalls = functionToolCalls.map(tc => {
+
+      console.log(
+        `🔧 Model requesting ${functionToolCalls.length} tool call(s):`,
+        functionToolCalls.map((tc) => tc.function.name).join(", ")
+      );
+
+      const formattedToolCalls = functionToolCalls.map((tc) => {
         console.log(`  📞 ${tc.function.name}(${tc.function.arguments})`);
         return {
           id: tc.id,
           type: "function" as const,
           function: {
             name: tc.function.name,
-            arguments: tc.function.arguments
-          }
+            arguments: tc.function.arguments,
+          },
         };
       });
 
@@ -161,8 +180,8 @@ class OpenRouterChatModel extends BaseChatModel {
         message: new AIMsg({
           content: message.content || "",
           additional_kwargs: {
-            tool_calls: formattedToolCalls
-          }
+            tool_calls: formattedToolCalls,
+          },
         }),
       };
 
@@ -184,45 +203,51 @@ class OpenRouterChatModel extends BaseChatModel {
 
   bindTools(tools: any[]): this {
     const newInstance = new OpenRouterChatModel(this.modelName);
-    newInstance.boundTools = tools.map(tool => {
+    newInstance.boundTools = tools.map((tool) => {
       let jsonSchema: any;
-      
+
       try {
         const rawSchema = tool.schema as any;
-        
+
         if (rawSchema?._def?.shape) {
           const properties: any = {};
           const required: string[] = [];
-          
-          Object.entries(rawSchema._def.shape).forEach(([key, value]: [string, any]) => {
-            const typeName = value._def?.typeName || value.constructor?.name;
-            let propSchema: any = { type: "string" };
-            
-            if (typeName === "ZodDefault" || value._def?.defaultValue !== undefined) {
-              const innerType = value._def?.innerType || value;
-              propSchema = { type: "string" };
-              if (value._def?.defaultValue !== undefined) {
-                propSchema.default = value._def.defaultValue;
+
+          Object.entries(rawSchema._def.shape).forEach(
+            ([key, value]: [string, any]) => {
+              const typeName =
+                value._def?.typeName || value.constructor?.name;
+              let propSchema: any = { type: "string" };
+
+              if (
+                typeName === "ZodDefault" ||
+                value._def?.defaultValue !== undefined
+              ) {
+                propSchema = { type: "string" };
+                if (value._def?.defaultValue !== undefined) {
+                  propSchema.default = value._def.defaultValue;
+                }
+              } else {
+                propSchema = { type: "string" };
+                required.push(key);
               }
-            } else {
-              propSchema = { type: "string" };
-              required.push(key);
+
+              const desc =
+                value._def?.description ||
+                value.description ||
+                value._def?.innerType?._def?.description;
+              if (desc) {
+                propSchema.description = desc;
+              }
+
+              properties[key] = propSchema;
             }
-            
-            const desc = value._def?.description || 
-                        value.description || 
-                        value._def?.innerType?._def?.description;
-            if (desc) {
-              propSchema.description = desc;
-            }
-            
-            properties[key] = propSchema;
-          });
-          
+          );
+
           jsonSchema = {
             type: "object",
             properties,
-            required
+            required,
           };
         } else {
           throw new Error("No shape found in schema _def");
@@ -232,17 +257,17 @@ class OpenRouterChatModel extends BaseChatModel {
         jsonSchema = {
           type: "object",
           properties: {},
-          required: []
+          required: [],
         };
       }
 
       return {
         name: tool.name,
         description: tool.description,
-        parameters: jsonSchema
+        parameters: jsonSchema,
       };
     });
-    
+
     return newInstance as this;
   }
 }
@@ -251,30 +276,47 @@ class OpenRouterChatModel extends BaseChatModel {
 // Validate tools
 // -----------------------------
 const safeTools = Array.isArray(allHederaTools)
-  ? allHederaTools.filter(t => t && typeof t.name === "string" && typeof t.call === "function")
+  ? allHederaTools.filter(
+      (t) => t && typeof t.name === "string" && typeof t.call === "function"
+    )
   : [];
 
 if (safeTools.length === 0) {
   console.warn("⚠️ No valid Hedera tools detected!");
 } else {
-  console.log(`✅ Loaded ${safeTools.length} Hedera tools:`, safeTools.map(t => t.name));
+  console.log(
+    `✅ Loaded ${safeTools.length} Hedera tools:`,
+    safeTools.map((t) => t.name)
+  );
 }
 
 // -----------------------------
-// Create the LangGraph agent
+// ✅ Lazy agent singleton — never instantiated at build/import time
 // -----------------------------
-const llm = new OpenRouterChatModel(process.env.OPENROUTER_MODEL || "gpt-4o-mini");
+let _agent: ReturnType<typeof createReactAgent> | null = null;
 
-const agent = createReactAgent({
-  llm,
-  tools: safeTools,
-  checkpointSaver: new MemorySaver(),
-});
+function getAgent() {
+  if (!_agent) {
+    const llm = new OpenRouterChatModel(
+      process.env.OPENROUTER_MODEL || "gpt-4o-mini"
+    );
+    _agent = createReactAgent({
+      llm,
+      tools: safeTools,
+      checkpointSaver: new MemorySaver(),
+    });
+    console.log("🤖 Agent initialized (lazy)");
+  }
+  return _agent;
+}
 
 // -----------------------------
 // Session management
 // -----------------------------
-const sessionHistories = new Map<string, Array<SystemMessage | HumanMessage | AIMessage>>();
+const sessionHistories = new Map<
+  string,
+  Array<SystemMessage | HumanMessage | AIMessage>
+>();
 const sessionTopics = new Map<string, string>();
 
 function getConversationHistory(sessionId: string) {
@@ -282,20 +324,20 @@ function getConversationHistory(sessionId: string) {
     sessionHistories.set(sessionId, [
       new SystemMessage(
         "You are DeCenterAI, a helpful AI assistant with Hedera blockchain integration.\n\n" +
-        "Tools available:\n" +
-        "1. CMD_HCS_CREATE_TOPIC: Creates a topic, returns JSON: {\"txId\": \"...\", \"topicId\": \"0.0.xxxxx\"}\n" +
-        "2. CMD_HCS_SUBMIT_TOPIC_MESSAGE: Submits message to a topic (requires topicId and message)\n\n" +
-        "WORKFLOW:\n" +
-        "- You can ONLY call ONE tool at a time\n" +
-        "- When user sends a message:\n" +
-        "  1. If no topic exists: Create one with CMD_HCS_CREATE_TOPIC\n" +
-        "  2. Submit the message with CMD_HCS_SUBMIT_TOPIC_MESSAGE\n" +
-        "  3. THEN answer the user's question naturally and helpfully\n" +
-        "- You are a conversational assistant - engage with users, answer their questions, and be helpful\n" +
-        "- The Hedera submission is just for record-keeping; your main job is to assist the user\n\n" +
-        "Example:\n" +
-        "User: 'What's 2+2?'\n" +
-        "You: [submit to Hedera] then respond: 'I've recorded your message. The answer is 4!'"
+          "Tools available:\n" +
+          "1. CMD_HCS_CREATE_TOPIC: Creates a topic, returns JSON: {\"txId\": \"...\", \"topicId\": \"0.0.xxxxx\"}\n" +
+          "2. CMD_HCS_SUBMIT_TOPIC_MESSAGE: Submits message to a topic (requires topicId and message)\n\n" +
+          "WORKFLOW:\n" +
+          "- You can ONLY call ONE tool at a time\n" +
+          "- When user sends a message:\n" +
+          "  1. If no topic exists: Create one with CMD_HCS_CREATE_TOPIC\n" +
+          "  2. Submit the message with CMD_HCS_SUBMIT_TOPIC_MESSAGE\n" +
+          "  3. THEN answer the user's question naturally and helpfully\n" +
+          "- You are a conversational assistant - engage with users, answer their questions, and be helpful\n" +
+          "- The Hedera submission is just for record-keeping; your main job is to assist the user\n\n" +
+          "Example:\n" +
+          "User: 'What's 2+2?'\n" +
+          "You: [submit to Hedera] then respond: 'I've recorded your message. The answer is 4!'"
       ),
     ]);
   }
@@ -322,61 +364,72 @@ export async function runAgent(opts: {
   sessionId?: string;
   autoCreateTopic?: boolean;
 }) {
-  const { 
-    playgroundPrompt, 
-    hcsTopicRequest, 
-    hcsSubmitMessage, 
-    model, 
+  const {
+    playgroundPrompt,
+    hcsTopicRequest,
+    hcsSubmitMessage,
+    model,
     sessionId = "default",
-    autoCreateTopic = true
+    autoCreateTopic = true,
   } = opts ?? {};
-  
-  const userMessageText = playgroundPrompt ?? hcsTopicRequest ?? hcsSubmitMessage ?? "No input.";
+
+  const userMessageText =
+    playgroundPrompt ?? hcsTopicRequest ?? hcsSubmitMessage ?? "No input.";
 
   const conversationHistory = getConversationHistory(sessionId);
   const existingTopic = getSessionTopic(sessionId);
 
-  // Add context message only once at the start
   if (autoCreateTopic && !existingTopic) {
     console.log(`📝 No topic for session ${sessionId}, will create automatically`);
-    conversationHistory.push(new HumanMessage(
-      `[SYSTEM CONTEXT: No topic exists yet. First use CMD_HCS_CREATE_TOPIC with memo="Auto-created for session ${sessionId}", ` +
-      `then use CMD_HCS_SUBMIT_TOPIC_MESSAGE with the user's message below.]\n\n` +
-      `User message: ${userMessageText}`
-    ));
+    conversationHistory.push(
+      new HumanMessage(
+        `[SYSTEM CONTEXT: No topic exists yet. First use CMD_HCS_CREATE_TOPIC with memo="Auto-created for session ${sessionId}", ` +
+          `then use CMD_HCS_SUBMIT_TOPIC_MESSAGE with the user's message below.]\n\n` +
+          `User message: ${userMessageText}`
+      )
+    );
   } else if (existingTopic) {
     console.log(`📋 Using topic ${existingTopic} for session ${sessionId}`);
-    conversationHistory.push(new HumanMessage(
-      `[SYSTEM CONTEXT: Use existing topic ${existingTopic}. Call CMD_HCS_SUBMIT_TOPIC_MESSAGE with topicId="${existingTopic}"]\n\n` +
-      `User message: ${userMessageText}`
-    ));
+    conversationHistory.push(
+      new HumanMessage(
+        `[SYSTEM CONTEXT: Use existing topic ${existingTopic}. Call CMD_HCS_SUBMIT_TOPIC_MESSAGE with topicId="${existingTopic}"]\n\n` +
+          `User message: ${userMessageText}`
+      )
+    );
   } else {
     conversationHistory.push(new HumanMessage(userMessageText));
   }
 
-  const payload = { 
+  const payload = {
     messages: conversationHistory as unknown as LangchainMessage[],
   } as any;
   if (model) payload.model = model;
 
   try {
-    const response: any = await agent.invoke(payload, { 
+    // ✅ Use lazy agent getter instead of module-level `agent`
+    const response: any = await getAgent().invoke(payload, {
       configurable: { thread_id: `DECENTERAI-${sessionId}` },
-      recursionLimit: 10 // Limit iterations to prevent infinite loops
+      recursionLimit: 10,
     });
 
     console.log("\n📦 Agent response summary:");
     console.log(`  Messages: ${response?.messages?.length || 0}`);
-    
+
     const lastMsg = response?.messages?.[response.messages.length - 1];
-    const replyText = lastMsg?.content ?? lastMsg?.text ?? "Task completed. Check logs for details.";
+    const replyText =
+      lastMsg?.content ??
+      lastMsg?.text ??
+      "Task completed. Check logs for details.";
 
     // Extract and save topicId if this was a new topic
     if (!existingTopic && response?.messages) {
       for (const msg of response.messages) {
-        if (msg._getType && msg._getType() === 'tool') {
-          const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-          
+        if (msg._getType && msg._getType() === "tool") {
+          const content =
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content);
+
           try {
             const parsed = JSON.parse(content);
             if (parsed.topicId) {
@@ -385,7 +438,6 @@ export async function runAgent(opts: {
               break;
             }
           } catch (e) {
-            // Try regex fallback
             const match = content.match(/"topicId"\s*:\s*"(0\.0\.\d+)"/);
             if (match) {
               setSessionTopic(sessionId, match[1]);
@@ -402,11 +454,14 @@ export async function runAgent(opts: {
     return replyText;
   } catch (err: any) {
     console.error("❌ Error in runAgent:", err.message);
-    
-    if (err.message?.includes('Recursion limit') || err.message?.includes('maximum iterations')) {
+
+    if (
+      err.message?.includes("Recursion limit") ||
+      err.message?.includes("maximum iterations")
+    ) {
       return "I completed the task but hit the iteration limit. The topic and message should be created. Check the logs above for transaction IDs.";
     }
-    
+
     throw err;
   }
 }
@@ -414,12 +469,14 @@ export async function runAgent(opts: {
 // -----------------------------
 // CLI interactive mode
 // -----------------------------
-const isRunningDirectly = process.argv[1]?.includes('ai-agent');
+const isRunningDirectly = process.argv[1]?.includes("ai-agent");
 
 if (isRunningDirectly) {
   (async () => {
     console.log("🤖 DeCenterAI CLI — type a prompt (Ctrl+C to exit)");
-    console.log("💡 Commands: 'topic' (show current topic), 'clear' (new session), 'exit'\n");
+    console.log(
+      "💡 Commands: 'topic' (show current topic), 'clear' (new session), 'exit'\n"
+    );
 
     const rl = await import("node:readline/promises");
     const r = rl.createInterface({ input: process.stdin, output: process.stdout });
@@ -429,36 +486,38 @@ if (isRunningDirectly) {
     while (true) {
       const prompt = await r.question("> ");
       if (!prompt.trim()) continue;
-      
+
       if (prompt.toLowerCase() === "clear") {
         sessionHistories.delete(cliSessionId);
         sessionTopics.delete(cliSessionId);
         console.log("🗑️  Session cleared\n");
         continue;
       }
-      
+
       if (prompt.toLowerCase() === "topic") {
         const topic = getSessionTopic(cliSessionId);
         console.log(topic ? `📋 Current topic: ${topic}\n` : "❌ No topic yet\n");
         continue;
       }
-      
-      if (prompt.toLowerCase() === "exit" || prompt.toLowerCase() === "quit") {
+
+      if (
+        prompt.toLowerCase() === "exit" ||
+        prompt.toLowerCase() === "quit"
+      ) {
         console.log("👋 Goodbye!");
         process.exit(0);
       }
-      
+
       try {
-        const reply = await runAgent({ 
-          playgroundPrompt: prompt, 
+        const reply = await runAgent({
+          playgroundPrompt: prompt,
           sessionId: cliSessionId,
-          autoCreateTopic: true 
+          autoCreateTopic: true,
         });
         console.log("\n🧠 AI:", reply, "\n");
-        
-        // Force flush stdout to prevent buffering issues
+
         if (process.stdout.write("")) {
-          process.stdout.once('drain', () => {});
+          process.stdout.once("drain", () => {});
         }
       } catch (err: any) {
         console.error("❌ Agent error:", err?.message ?? err);

@@ -1,4 +1,8 @@
 // app/api/agent/route.ts
+
+// ✅ Prevents Next.js from attempting to pre-render this route at build time
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { runAgent, getSessionTopic } from "@/agents/ai-agent";
 
@@ -35,16 +39,16 @@ export async function POST(req: NextRequest) {
 
     try {
       const sessionId = userId.toString();
-      
+
       // Check if topic exists for this user
       const existingTopic = getSessionTopic(sessionId);
-      
+
       // Call the agent with auto-create enabled
       const aiResponse = await runAgent({
         playgroundPrompt: prompt,
         model: model || "gpt-4o-mini",
         sessionId,
-        autoCreateTopic: true, // Automatically handle topic creation
+        autoCreateTopic: true,
       });
 
       // Get the topic (might be newly created)
@@ -68,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (error: any) {
     console.error("Agent API error:", error);
-    
+
     return NextResponse.json(
       {
         success: false,
@@ -83,8 +87,8 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   // Optional: Get topic for a specific user
   const searchParams = req.nextUrl.searchParams;
-  const userId = searchParams.get('userId');
-  
+  const userId = searchParams.get("userId");
+
   if (userId) {
     const topic = getSessionTopic(userId);
     return NextResponse.json({
@@ -102,7 +106,7 @@ export async function GET(req: NextRequest) {
     features: ["Auto topic creation", "Message submission"],
     tools: [
       "CMD_HCS_CREATE_TOPIC - Create Hedera topics",
-      "CMD_HCS_SUBMIT_TOPIC_MESSAGE - Submit messages to topics"
+      "CMD_HCS_SUBMIT_TOPIC_MESSAGE - Submit messages to topics",
     ],
   });
 }
