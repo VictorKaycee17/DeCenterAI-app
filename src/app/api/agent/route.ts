@@ -1,10 +1,13 @@
 // app/api/agent/route.ts
 
-// ✅ Prevents Next.js from attempting to pre-render this route at build time
+// ✅ Prevents Next.js from pre-rendering this route at build time
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { runAgent, getSessionTopic } from "@/agents/ai-agent";
+// ✅ NOTE: ai-agent is NOT imported here at the top level.
+// It is dynamically imported inside each handler to prevent
+// module-level code (OpenAI client, LangChain, Hedera tools)
+// from executing during Next.js build/page-data collection.
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,6 +35,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    // ✅ Dynamic import — ai-agent only loads at request time, never at build time
+    const { runAgent, getSessionTopic } = await import("@/agents/ai-agent");
 
     // Temporarily set the API key for this request
     const originalKey = process.env.UNREAL_API_KEY;
@@ -90,6 +96,8 @@ export async function GET(req: NextRequest) {
   const userId = searchParams.get("userId");
 
   if (userId) {
+    // ✅ Dynamic import — consistent, safe at build time
+    const { getSessionTopic } = await import("@/agents/ai-agent");
     const topic = getSessionTopic(userId);
     return NextResponse.json({
       success: true,

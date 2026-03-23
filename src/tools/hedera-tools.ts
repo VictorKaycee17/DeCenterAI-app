@@ -5,17 +5,31 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
 // ---------------------
-// Hedera Client
+// ✅ Lazy Hedera Client
+// createInstance() is NOT called at module load time.
+// It is deferred to the first actual tool invocation so that
+// the Hedera SDK never runs during Next.js build/page-data collection.
 // ---------------------
-const hederaClient = createInstance();
+let _hederaClient: ReturnType<typeof createInstance> | null = null;
+
+function getHederaClient(): ReturnType<typeof createInstance> {
+  if (!_hederaClient) {
+    _hederaClient = createInstance();
+  }
+  return _hederaClient;
+}
 
 // ---------------------
 // Create Topic Tool
 // ---------------------
 export const commandHcsCreateTopicTool = tool(
   async ({ memo }: { memo: string }) => {
+    // ✅ Client obtained lazily inside the handler
+    const hederaClient = getHederaClient();
     try {
-      const tx = await new TopicCreateTransaction().setTopicMemo(memo).freezeWith(hederaClient);
+      const tx = await new TopicCreateTransaction()
+        .setTopicMemo(memo)
+        .freezeWith(hederaClient);
       const signed = await tx.signWithOperator(hederaClient);
       const submitted = await signed.execute(hederaClient);
       const receipt = await submitted.getReceipt(hederaClient);
@@ -35,8 +49,11 @@ export const commandHcsCreateTopicTool = tool(
     name: "CMD_HCS_CREATE_TOPIC",
     description: "Create a new Hedera Consensus Service topic with an optional memo",
     schema: z.object({
-      memo: z.string().describe("A memo/description for the topic (optional, can be empty string)").default("")
-    })
+      memo: z
+        .string()
+        .describe("A memo/description for the topic (optional, can be empty string)")
+        .default(""),
+    }),
   }
 );
 
@@ -45,6 +62,8 @@ export const commandHcsCreateTopicTool = tool(
 // ---------------------
 export const commandHcsSubmitTopicMessageTool = tool(
   async ({ topicId, message }: { topicId: string; message: string }) => {
+    // ✅ Client obtained lazily inside the handler
+    const hederaClient = getHederaClient();
     try {
       const tx = await new TopicMessageSubmitTransaction()
         .setTopicId(topicId)
@@ -68,12 +87,15 @@ export const commandHcsSubmitTopicMessageTool = tool(
     description: "Submit a message to an existing HCS topic",
     schema: z.object({
       topicId: z.string().describe("The Hedera topic ID (format: 0.0.xxxxx)"),
-      message: z.string().describe("The message content to submit to the topic")
-    })
+      message: z.string().describe("The message content to submit to the topic"),
+    }),
   }
 );
 
 // ---------------------
 // Export all tools
 // ---------------------
-export const allHederaTools = [commandHcsCreateTopicTool, commandHcsSubmitTopicMessageTool];
+export const allHederaTools = [
+  commandHcsCreateTopicTool,
+  commandHcsSubmitTopicMessageTool,
+];

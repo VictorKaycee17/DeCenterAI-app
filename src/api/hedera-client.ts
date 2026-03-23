@@ -20,21 +20,23 @@ export function createInstance(params: HederaClientConfig = {}) {
     privateKeyType,
   } = params;
 
-  id = id || process.env.HEDERA_ACCOUNT_ID!;
-  privateKey = privateKey || process.env.HEDERA_ACCOUNT_PRIVATE_KEY!;
+  id = id || process.env.HEDERA_ACCOUNT_ID;
+  privateKey = privateKey || process.env.HEDERA_ACCOUNT_PRIVATE_KEY;
   network = network || (process.env.HEDERA_ACCOUNT_NETWORK as HederaClientConfig["network"]) || "testnet";
   privateKeyType = privateKeyType || (process.env.HEDERA_ACCOUNT_PRIVATE_KEY_TYPE as HederaClientConfig["privateKeyType"]) || "ECDSA";
 
+  // ✅ Guard FIRST — before any operation that reads id or privateKey
+  if (!id || !privateKey) {
+    throw new Error("Must set env vars: HEDERA_ACCOUNT_ID and HEDERA_ACCOUNT_PRIVATE_KEY");
+  }
+
+  // ✅ Safe to call .substring() now — both values are confirmed defined
   console.log("hedera client createInstance", {
     network,
     id,
     privateKey: privateKey.substring(0, 5) + "...",
     privateKeyType,
   });
-
-  if (!id || !privateKey) {
-    throw new Error("Must set env vars: HEDERA_ACCOUNT_ID and HEDERA_ACCOUNT_PRIVATE_KEY");
-  }
 
   const operatorId = AccountId.fromString(id);
 
