@@ -144,6 +144,111 @@ Prompt
 - **Efficiency:** Hedera’s low-cost, carbon-negative network supports affordable large-scale AI operations.  
 - **Trust Layer:** Hedera provides decentralized auditability for AI decision-making and logging.
 
+# DeCenter AI — Hedera Apex Hackathon Evaluation Responses
+
+---
+
+## 🟢 Baseline Quality (30%)
+
+### 1. Was the starting point real and coherent?
+
+Yes. DeCenter AI started with a clear and real problem: AI infrastructure is fragmented, expensive, and difficult to scale for consumer applications. The initial concept of a unified AI studio with agent-based routing was well-defined and aligned with real market needs.
+
+---
+
+### 2. Baseline Hedera Fit (10%)
+
+The baseline integration with Hedera was strong and intentional.
+
+* Hedera Consensus Service (HCS) was used for logging AI inference activity
+* Hedera Token Service (HTS) enabled microtransactions for pay-per-inference
+  This created a clear alignment between AI infrastructure and decentralized trust/logging.
+
+---
+
+### 3. Baseline Feasibility (10%)
+
+The project was technically feasible from the start.
+
+* Modular architecture (API + AI routing + blockchain logging)
+* Use of existing frameworks (LangChain, Supabase, Node.js)
+* Clear execution path for MVP delivery within hackathon timeline
+
+---
+
+### 4. Baseline Product Clarity (10%)
+
+The product vision was clear:
+A single API to access multiple AI models at low cost, with transparent logging and micro-billing.
+The value proposition (reduce cost, simplify access, improve scalability) was easy to understand and compelling.
+
+---
+
+## 🔵 Delta Score (70%)
+
+### 1. Delta in Product Scope & UX (25%)
+
+Significant improvements were made:
+
+* Expanded from core API infrastructure to include **Explorer (distribution layer)**
+* Improved developer experience with API key generation and playground testing
+* Introduced **built-in billing abstraction** for end users
+* Enhanced UX for both developers (B2B) and consumers (discovery layer)
+
+This evolved the product from a tool into a **full ecosystem (infra + distribution)**.
+
+---
+
+### 2. Delta in Technical Robustness (15%)
+
+Technical depth increased meaningfully:
+
+* Improved AI orchestration using agent-based routing (LangChain / LangGraph)
+* Better handling of inference lifecycle management
+* Optimized system flow between off-chain AI processing and on-chain logging
+* Strengthened backend architecture with scalable API layer and Supabase integration
+
+---
+
+### 3. Delta in Traction / Validation (15%)
+
+Strong post-baseline validation:
+
+* Grew to **36+ B2B startups onboarded within 2 months**
+* Achieved **5M+ monthly inferences**
+* Secured **~$1M in infrastructure funding, credits, and grants**
+* Completed **accelerator cohort (Foundance)**
+* Built early **investor relationships and pipeline**
+
+This demonstrates real market demand and early product-market fit signals.
+
+---
+
+### 4. Delta in Hedera Integration Depth (15%)
+
+Deeper and more meaningful Hedera usage:
+
+* Expanded use of **HCS for verifiable inference logs and auditability**
+* Strengthened **HTS microtransaction flow for scalable billing**
+* Improved architecture for **real-time logging + retrieval via mirror nodes**
+* Positioned Hedera as a **core trust and transaction layer** in AI infrastructure
+
+Hedera evolved from a supporting component to a **critical backbone of the system**.
+
+---
+
+## 🚀 Additional Progress Since Baseline
+
+* Completed **accelerator program (Foundance)**
+* Established key partnerships with:
+
+  * Intel
+  * Google Labs
+  * Cloudflare
+  * Perplexity
+* Developed **tokenomics model** for network incentives
+* Built strong **investor pipeline and fundraising momentum**
+* Expanded vision to include **AI + DePIN ecosystem infrastructure**
 
 
 ---
