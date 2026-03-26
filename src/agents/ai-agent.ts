@@ -2,11 +2,10 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-// Suppress LangChain deprecation warnings - multiple approaches
+// Suppress LangChain deprecation warnings
 process.env.LANGCHAIN_SUPPRESS_WARNINGS = "true";
 process.env.LANGCHAIN_TRACING_V2 = "false";
 
-// Monkey-patch console.warn to filter out LangChain warnings
 const originalWarn = console.warn;
 console.warn = (...args: any[]) => {
   const message = args.join(" ");
@@ -62,10 +61,7 @@ class OpenRouterAdapter {
     tools?: any[]
   ) {
     try {
-      const params: any = {
-        model,
-        messages,
-      };
+      const params: any = { model, messages };
 
       if (tools && tools.length > 0) {
         const formattedTools = tools
@@ -84,7 +80,7 @@ class OpenRouterAdapter {
           }));
         params.tools = formattedTools;
         params.tool_choice = "auto";
-        params.parallel_tool_calls = false; // CRITICAL: Disable parallel tool calls
+        params.parallel_tool_calls = false;
       }
 
       const resp = await this.client.chat.completions.create(params);
@@ -100,23 +96,21 @@ class OpenRouterAdapter {
 // Custom LangChain Chat Model
 // -----------------------------
 class OpenRouterChatModel extends BaseChatModel {
-  // ✅ FIX: adapter is lazily initialized to avoid crashing at build time
-  private _adapter: OpenRouterAdapter | null = null;
+  // ✅ Adapter is created per-request with the provided apiKey,
+  //    never cached as a singleton so key changes take effect immediately
+  private apiKey: string | undefined;
   modelName: string;
   private boundTools: any[] = [];
 
-  constructor(modelName = "gpt-4o-mini") {
+  constructor(modelName = "gpt-4o-mini", apiKey?: string) {
     super({});
     this.modelName = modelName;
-    // ✅ Do NOT instantiate OpenRouterAdapter here — deferred to first use
+    this.apiKey = apiKey;
   }
 
-  // ✅ Lazy getter — only creates the adapter when a real request comes in
+  // ✅ Fresh adapter each time — ensures the correct apiKey is always used
   private getAdapter(): OpenRouterAdapter {
-    if (!this._adapter) {
-      this._adapter = new OpenRouterAdapter();
-    }
-    return this._adapter;
+    return new OpenRouterAdapter(this.apiKey);
   }
 
   _llmType(): string {
@@ -131,7 +125,6 @@ class OpenRouterChatModel extends BaseChatModel {
     const formattedMessages = messages.map((msg) => {
       const msgType = msg._getType();
       let role: "system" | "user" | "assistant" = "user";
-
       if (msgType === "system") role = "system";
       else if (msgType === "ai") role = "assistant";
       else if (msgType === "human") role = "user";
@@ -143,7 +136,6 @@ class OpenRouterChatModel extends BaseChatModel {
       };
     });
 
-    // ✅ Use lazy adapter getter
     const resp = await this.getAdapter().chat(
       formattedMessages,
       this.modelName,
@@ -179,30 +171,21 @@ class OpenRouterChatModel extends BaseChatModel {
         text: message.content || "",
         message: new AIMsg({
           content: message.content || "",
-          additional_kwargs: {
-            tool_calls: formattedToolCalls,
-          },
+          additional_kwargs: { tool_calls: formattedToolCalls },
         }),
       };
 
-      return {
-        generations: [generation],
-      };
+      return { generations: [generation] };
     }
 
     const text = message.content || "No response";
-    const generation: ChatGeneration = {
-      text,
-      message: new AIMsg(text),
-    };
-
     return {
-      generations: [generation],
+      generations: [{ text, message: new AIMsg(text) }],
     };
   }
 
   bindTools(tools: any[]): this {
-    const newInstance = new OpenRouterChatModel(this.modelName);
+    const newInstance = new OpenRouterChatModel(this.modelName, this.apiKey);
     newInstance.boundTools = tools.map((tool) => {
       let jsonSchema: any;
 
@@ -215,14 +198,10 @@ class OpenRouterChatModel extends BaseChatModel {
 
           Object.entries(rawSchema._def.shape).forEach(
             ([key, value]: [string, any]) => {
-              const typeName =
-                value._def?.typeName || value.constructor?.name;
+              const typeName = value._def?.typeName || value.constructor?.name;
               let propSchema: any = { type: "string" };
 
-              if (
-                typeName === "ZodDefault" ||
-                value._def?.defaultValue !== undefined
-              ) {
+              if (typeName === "ZodDefault" || value._def?.defaultValue !== undefined) {
                 propSchema = { type: "string" };
                 if (value._def?.defaultValue !== undefined) {
                   propSchema.default = value._def.defaultValue;
@@ -236,29 +215,19 @@ class OpenRouterChatModel extends BaseChatModel {
                 value._def?.description ||
                 value.description ||
                 value._def?.innerType?._def?.description;
-              if (desc) {
-                propSchema.description = desc;
-              }
+              if (desc) propSchema.description = desc;
 
               properties[key] = propSchema;
             }
           );
 
-          jsonSchema = {
-            type: "object",
-            properties,
-            required,
-          };
+          jsonSchema = { type: "object", properties, required };
         } else {
           throw new Error("No shape found in schema _def");
         }
       } catch (err: any) {
         console.warn(`⚠️  Could not extract schema for ${tool.name}:`, err.message);
-        jsonSchema = {
-          type: "object",
-          properties: {},
-          required: [],
-        };
+        jsonSchema = { type: "object", properties: {}, required: [] };
       }
 
       return {
@@ -284,30 +253,34 @@ const safeTools = Array.isArray(allHederaTools)
 if (safeTools.length === 0) {
   console.warn("⚠️ No valid Hedera tools detected!");
 } else {
-  console.log(
-    `✅ Loaded ${safeTools.length} Hedera tools:`,
-    safeTools.map((t) => t.name)
-  );
+  console.log(`✅ Loaded ${safeTools.length} Hedera tools:`, safeTools.map((t) => t.name));
 }
 
 // -----------------------------
-// ✅ Lazy agent singleton — never instantiated at build/import time
+// ✅ Agent factory — one agent per apiKey so auth is always fresh
 // -----------------------------
-let _agent: ReturnType<typeof createReactAgent> | null = null;
+const agentCache = new Map<string, ReturnType<typeof createReactAgent>>();
 
-function getAgent() {
-  if (!_agent) {
+function getAgent(apiKey?: string) {
+  // Use a cache key so we reuse agents for the same key (perf),
+  // but always create a new one for a new/different key (correctness)
+  const cacheKey = apiKey || "__env__";
+
+  if (!agentCache.has(cacheKey)) {
     const llm = new OpenRouterChatModel(
-      process.env.OPENROUTER_MODEL || "gpt-4o-mini"
+      process.env.OPENROUTER_MODEL || "gpt-4o-mini",
+      apiKey // ✅ key is wired through to the adapter
     );
-    _agent = createReactAgent({
+    const newAgent = createReactAgent({
       llm,
       tools: safeTools,
       checkpointSaver: new MemorySaver(),
     });
-    console.log("🤖 Agent initialized (lazy)");
+    agentCache.set(cacheKey, newAgent);
+    console.log(`🤖 Agent initialized for key: ${cacheKey.substring(0, 8)}...`);
   }
-  return _agent;
+
+  return agentCache.get(cacheKey)!;
 }
 
 // -----------------------------
@@ -362,6 +335,7 @@ export async function runAgent(opts: {
   hcsSubmitMessage?: string;
   model?: string;
   sessionId?: string;
+  apiKey?: string; // ✅ new — forwarded from route.ts
   autoCreateTopic?: boolean;
 }) {
   const {
@@ -370,6 +344,7 @@ export async function runAgent(opts: {
     hcsSubmitMessage,
     model,
     sessionId = "default",
+    apiKey,
     autoCreateTopic = true,
   } = opts ?? {};
 
@@ -406,8 +381,8 @@ export async function runAgent(opts: {
   if (model) payload.model = model;
 
   try {
-    // ✅ Use lazy agent getter instead of module-level `agent`
-    const response: any = await getAgent().invoke(payload, {
+    // ✅ getAgent(apiKey) ensures the right key is used for this request
+    const response: any = await getAgent(apiKey).invoke(payload, {
       configurable: { thread_id: `DECENTERAI-${sessionId}` },
       recursionLimit: 10,
     });
@@ -450,7 +425,6 @@ export async function runAgent(opts: {
     }
 
     conversationHistory.push(new AIMessage(replyText));
-
     return replyText;
   } catch (err: any) {
     console.error("❌ Error in runAgent:", err.message);
@@ -474,13 +448,10 @@ const isRunningDirectly = process.argv[1]?.includes("ai-agent");
 if (isRunningDirectly) {
   (async () => {
     console.log("🤖 DeCenterAI CLI — type a prompt (Ctrl+C to exit)");
-    console.log(
-      "💡 Commands: 'topic' (show current topic), 'clear' (new session), 'exit'\n"
-    );
+    console.log("💡 Commands: 'topic' (show current topic), 'clear' (new session), 'exit'\n");
 
     const rl = await import("node:readline/promises");
     const r = rl.createInterface({ input: process.stdin, output: process.stdout });
-
     const cliSessionId = "cli-" + Date.now();
 
     while (true) {
@@ -500,10 +471,7 @@ if (isRunningDirectly) {
         continue;
       }
 
-      if (
-        prompt.toLowerCase() === "exit" ||
-        prompt.toLowerCase() === "quit"
-      ) {
+      if (prompt.toLowerCase() === "exit" || prompt.toLowerCase() === "quit") {
         console.log("👋 Goodbye!");
         process.exit(0);
       }
@@ -515,7 +483,6 @@ if (isRunningDirectly) {
           autoCreateTopic: true,
         });
         console.log("\n🧠 AI:", reply, "\n");
-
         if (process.stdout.write("")) {
           process.stdout.once("drain", () => {});
         }
