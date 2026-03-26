@@ -4,10 +4,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-// ✅ NOTE: ai-agent is NOT imported here at the top level.
-// It is dynamically imported inside each handler to prevent
-// module-level code (OpenAI client, LangChain, Hedera tools)
-// from executing during Next.js build/page-data collection.
+// ✅ ai-agent is NOT imported at the top level — dynamically imported inside
+// each handler so module-level code never runs during Next.js build.
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,46 +34,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ Dynamic import — ai-agent only loads at request time, never at build time
+    // ✅ Dynamic import — only runs at request time, never at build time
     const { runAgent, getSessionTopic } = await import("@/agents/ai-agent");
 
-    // Temporarily set the API key for this request
-    const originalKey = process.env.UNREAL_API_KEY;
-    process.env.UNREAL_API_KEY = apiKey;
+    const sessionId = userId.toString();
 
-    try {
-      const sessionId = userId.toString();
+    // Check if topic exists for this user
+    const existingTopic = getSessionTopic(sessionId);
 
-      // Check if topic exists for this user
-      const existingTopic = getSessionTopic(sessionId);
+    // ✅ Pass apiKey directly into runAgent — avoids env mutation which
+    //    doesn't work with the lazy singleton adapter pattern
+    const aiResponse = await runAgent({
+      playgroundPrompt: prompt,
+      model: model || "gpt-4o-mini",
+      sessionId,
+      apiKey,
+      autoCreateTopic: true,
+    });
 
-      // Call the agent with auto-create enabled
-      const aiResponse = await runAgent({
-        playgroundPrompt: prompt,
-        model: model || "gpt-4o-mini",
-        sessionId,
-        autoCreateTopic: true,
-      });
+    // Get the topic (might be newly created)
+    const currentTopic = getSessionTopic(sessionId);
 
-      // Get the topic (might be newly created)
-      const currentTopic = getSessionTopic(sessionId);
-
-      return NextResponse.json({
-        success: true,
-        aiResponse,
-        topicId: currentTopic,
-        isNewTopic: !existingTopic && !!currentTopic,
-        object: "chat.completion",
-        model: model || "gpt-4o-mini",
-      });
-    } finally {
-      // Restore original API key
-      if (originalKey) {
-        process.env.UNREAL_API_KEY = originalKey;
-      } else {
-        delete process.env.UNREAL_API_KEY;
-      }
-    }
+    return NextResponse.json({
+      success: true,
+      aiResponse,
+      topicId: currentTopic,
+      isNewTopic: !existingTopic && !!currentTopic,
+      object: "chat.completion",
+      model: model || "gpt-4o-mini",
+    });
   } catch (error: any) {
     console.error("Agent API error:", error);
 
@@ -91,7 +78,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  // Optional: Get topic for a specific user
   const searchParams = req.nextUrl.searchParams;
   const userId = searchParams.get("userId");
 
